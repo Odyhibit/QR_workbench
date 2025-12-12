@@ -1,0 +1,1 @@
+This tool can be used to explore QR codes and the things that make them up.
