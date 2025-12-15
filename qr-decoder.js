@@ -1834,7 +1834,12 @@ function rsDecodeCorrected(codeword, eccLen, locatorHint = null, positionsHint =
     }
 
     let locator = locatorHint || rsDecoder.findErrorLocator(syndromes);
-    let errorResults = positionsHint || rsDecoder.findErrors(locator, codeword.length);
+    let errorResults = positionsHint
+        ? positionsHint.map(p => ({
+            position: p,
+            locator: rsDecoder.expTable[(255 - (codeword.length - 1 - p)) % 255]
+        }))
+        : rsDecoder.findErrors(locator, codeword.length);
 
     if (errorResults.length === 0 && locator.length > 1) {
         const reversed = [...locator].reverse();
@@ -1845,13 +1850,19 @@ function rsDecodeCorrected(codeword, eccLen, locatorHint = null, positionsHint =
         }
     }
 
-    // Extract positions and locators from error results
-    const positions = errorResults.map ? errorResults.map(e => e.position) : [];
-    const locators = errorResults.map ? errorResults.map(e => e.locator) : [];
+    // Extract positions and locators
+    const errorPositions = errorResults.map(r => r.position !== undefined ? r.position : r);
+    const locators = errorResults.map(r => {
+        if (r.locator !== undefined && r.locator !== null) return r.locator;
+        const pos = r.position !== undefined ? r.position : r;
+        const i = codeword.length - 1 - pos;
+        const expIdx = (255 - i) % 255;
+        return rsDecoder.expTable[expIdx];
+    });
 
     const errorValues = rsDecoder.forneyAlgorithm(syndromes, locators, codeword.length, locator);
     const corrected = [...codeword];
-    positions.forEach((pos, i) => {
+    errorPositions.forEach((pos, i) => {
         const val = errorValues[i] || 0;
         // positions from findErrors already map to codeword indices (0 = leftmost)
         const idx = pos;
@@ -1860,7 +1871,7 @@ function rsDecodeCorrected(codeword, eccLen, locatorHint = null, positionsHint =
 
     return {
         codeword: corrected,
-        errorPositions: positions,
+        errorPositions,
         errorValues,
         locator,
         syndromes
@@ -1975,21 +1986,21 @@ function findErrorLocations() {
         if (errorResults.length === 0 && errorLocator.length > 1) {
             // Try reversed coefficient order (common convention mismatch)
             const reversedLocator = [...errorLocator].reverse();
-            errorResults = rsDecoder.findErrors(reversedLocator, n);
-            if (errorResults.length > 0) {
+            const altResults = rsDecoder.findErrors(reversedLocator, n);
+            if (altResults.length > 0) {
                 locatorUsed = reversedLocator;
+                errorResults = altResults;
             }
         }
 
-        // Extract positions and locators
-        const errorPositions = errorResults.map(e => e.position);
-        const errorLocators = errorResults.map(e => e.locator);
+        // Extract positions and Xi roots
+        const errorPositions = errorResults.map(r => r.position !== undefined ? r.position : r);
+        const errorLocators = errorResults.map(r => r.locator !== undefined ? r.locator : null);
 
         console.log(`Block ${blockIdx + 1}: Found ${errorPositions.length} error positions:`, errorPositions);
-        console.log(`Block ${blockIdx + 1}: Error locators (Xi):`, errorLocators.map(x => x.toString(16)));
         console.log(`Block ${blockIdx + 1}: Max correctable: ${Math.floor(block.eccBytes.length / 2)}`);
 
-        block.errorPositions = errorPositions;
+        block.errorPositions = Array.isArray(errorPositions) ? [...errorPositions] : [];
         block.errorLocators = errorLocators;
         block.errorLocator = locatorUsed;
 
@@ -2061,10 +2072,18 @@ function calculateErrorValues() {
         const codewordLen = block.dataBytes.length + block.eccBytes.length;
 
         const locator = block.errorLocator || rsDecoder.findErrorLocator(block.syndromes);
-        // Pass errorLocators (Xi values) instead of positions
+        const locatorsForForney = (block.errorLocators && block.errorLocators.length ? block.errorLocators : block.errorPositions)
+            .map(val => {
+                if (val === null || val === undefined) return null;
+                if (block.errorLocators && block.errorLocators.length) return val;
+                const pos = val;
+                const i = codewordLen - 1 - pos;
+                const expIdx = (255 - i) % 255;
+                return rsDecoder.expTable[expIdx];
+            });
         block.errorValues = rsDecoder.forneyAlgorithm(
             block.syndromes,
-            block.errorLocators,
+            locatorsForForney,
             codewordLen,
             locator
         );
