@@ -131,8 +131,13 @@
 
         <div class="canvas-area">
             <div class="canvas-container">
-                <h2>Cleaned QR Code</h2>
-                <canvas id="cleanCanvas"></canvas>
+                <div class="collapsible-header">
+                    <h2>Cleaned QR Code</h2>
+                    <button class="toggle-collapse" id="toggleCleanCanvas" onclick="toggleCleanCanvas()">Hide</button>
+                </div>
+                <div id="cleanCanvasWrapper">
+                    <canvas id="cleanCanvas"></canvas>
+                </div>
             </div>
             <div class="status">
                 <div class="collapsible-header">
@@ -162,11 +167,17 @@
                 </div>
             </div>
             <div class="status">
-                <div id="blockDisplay" style="width: 100%; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 11px;"></div>
-            </div>
-            <div class="status" id="ecStatus" style="display: none;">
-                <p><strong>Error Correction Status:</strong></p>
-                <div id="ecStatusContent"></div>
+                <div class="collapsible-header">
+                    <h3 style="margin: 0;">Error Correction Blocks</h3>
+                    <button class="toggle-collapse" id="toggleBlocks" onclick="toggleBlocksPanel()">Hide</button>
+                </div>
+                <div id="blocksPanel">
+                    <div id="blockDisplay" style="width: 100%; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 11px;"></div>
+                    <div class="ec-status" id="ecStatus" style="display: none;">
+                        <p><strong>Error Correction Status:</strong></p>
+                        <div id="ecStatusContent"></div>
+                    </div>
+                </div>
             </div>
         </div>
     </div>

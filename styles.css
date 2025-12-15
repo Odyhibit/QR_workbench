@@ -474,3 +474,18 @@ canvas {
     border: 1px solid #666;
     border-radius: 3px;
 }
+
+#cleanCanvasWrapper.collapsed,
+#bitstreamPanel.collapsed,
+#blocksPanel.collapsed,
+#markingContent.collapsed {
+    display: none;
+}
+
+.ec-status {
+    margin-top: 10px;
+    padding: 8px;
+    background: #f7f7f7;
+    border: 1px solid #ddd;
+    border-radius: 4px;
+}

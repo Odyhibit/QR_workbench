@@ -25,6 +25,9 @@ let bitstreamIndex = 0; // Next bit position to consume from dataPositions
 let recoveredBitstream = ''; // Accumulated bitstream
 let currentHighlight = []; // Modules highlighted for the current byte
 let isMarkingCollapsed = false;
+let isCleanCanvasCollapsed = false;
+let isBlocksCollapsed = false;
+let isBitstreamCollapsed = false;
 let currentEccLevel = '';
 let deinterleavedDataBits = ''; // Concatenated data bits after de-interleaving
 let decodedMessageSize = null;
@@ -669,13 +672,44 @@ function toggleMarking() {
 }
 
 // Toggle bitstream recovery panel
-let isBitstreamCollapsed = false;
 function toggleBitstreamPanel() {
     isBitstreamCollapsed = !isBitstreamCollapsed;
     const panel = document.getElementById('bitstreamPanel');
     const toggle = document.getElementById('toggleBitstream');
     if (panel && toggle) {
         if (isBitstreamCollapsed) {
+            panel.classList.add('collapsed');
+            toggle.textContent = 'Show';
+        } else {
+            panel.classList.remove('collapsed');
+            toggle.textContent = 'Hide';
+        }
+    }
+}
+
+// Toggle cleaned canvas visibility
+function toggleCleanCanvas() {
+    isCleanCanvasCollapsed = !isCleanCanvasCollapsed;
+    const panel = document.getElementById('cleanCanvasWrapper');
+    const toggle = document.getElementById('toggleCleanCanvas');
+    if (panel && toggle) {
+        if (isCleanCanvasCollapsed) {
+            panel.classList.add('collapsed');
+            toggle.textContent = 'Show';
+        } else {
+            panel.classList.remove('collapsed');
+            toggle.textContent = 'Hide';
+        }
+    }
+}
+
+// Toggle error-correction blocks visibility
+function toggleBlocksPanel() {
+    isBlocksCollapsed = !isBlocksCollapsed;
+    const panel = document.getElementById('blocksPanel');
+    const toggle = document.getElementById('toggleBlocks');
+    if (panel && toggle) {
+        if (isBlocksCollapsed) {
             panel.classList.add('collapsed');
             toggle.textContent = 'Show';
         } else {
@@ -1865,6 +1899,12 @@ function deinterleaveData() {
     const calculateSyndromesButton = document.getElementById('calculateSyndromesButton');
     if (calculateSyndromesButton) {
         calculateSyndromesButton.disabled = false;
+    }
+
+    // Allow message decoding demo right after de-interleave (before and after EC)
+    const decodeMessageButton = document.getElementById('decodeMessageButton');
+    if (decodeMessageButton) {
+        decodeMessageButton.disabled = false;
     }
 
     // Disable after use to match other one-time actions
