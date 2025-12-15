@@ -103,7 +103,7 @@
             </div>
 
             <div class="marking-controls">
-                <h3>Data Processing</h3>
+                <h3>Recover Data Blocks</h3>
                 <button class="mark-button" id="unmaskButton" onclick="unmaskQRCode()" disabled>Unmask Data</button>
                 <div class="recovery-buttons">
                     <button class="mark-button" id="recoverAllButton" onclick="recoverAllBitstream()" disabled>Recover All</button>
@@ -114,10 +114,19 @@
                 <button class="mark-button" id="decodeSizeButton" onclick="decodeSize()" disabled>Decode Size</button>
             </div>
 
-            <div class="status">
-                <p><strong>Bitstream:</strong></p>
-                <textarea id="bitstreamOutput" readonly style="width: 100%; height: 150px; font-family: monospace; font-size: 11px; resize: vertical;"></textarea>
+            <div class="marking-controls">
+                <h3>Error Correction</h3>
+                <button class="mark-button" id="calculateSyndromesButton" onclick="calculateSyndromes()" disabled>Calculate Syndromes</button>
+                <button class="mark-button" id="findErrorLocationsButton" onclick="findErrorLocations()" disabled>Find Error Locations</button>
+                <button class="mark-button" id="calculateErrorValuesButton" onclick="calculateErrorValues()" disabled>Calculate Error Values</button>
+                <button class="mark-button" id="applyCorrectionsButton" onclick="applyCorrections()" disabled>Apply Corrections</button>
+                <button class="mark-button" id="decodeMessageButton" onclick="decodeMessage()" disabled>Decode Message</button>
+                <div id="decodedMessageBox" style="display: none; margin-top: 10px; padding: 10px; background: #e8f4f8; border-radius: 4px; border: 2px solid #4a9eff;">
+                    <p style="margin: 0 0 5px 0; font-weight: bold; color: #2c5aa0;">Decoded Message:</p>
+                    <div id="decodedMessageContent" style="font-family: monospace; font-size: 13px; word-wrap: break-word; white-space: pre-wrap;"></div>
+                </div>
             </div>
+
         </div>
 
         <div class="canvas-area">
@@ -125,9 +134,44 @@
                 <h2>Cleaned QR Code</h2>
                 <canvas id="cleanCanvas"></canvas>
             </div>
+            <div class="status">
+                <div class="collapsible-header">
+                    <h3 style="margin: 0;">Bitstream Recovery</h3>
+                    <button class="toggle-collapse" id="toggleBitstream" onclick="toggleBitstreamPanel()">Hide</button>
+                </div>
+                <div id="bitstreamPanel">
+                    <div id="bitstreamLegend" class="bitstream-legend" style="display: none;">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #E3F2FD; border-color: #1976D2;"></div>
+                            <span>Block 1</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #E8F5E9; border-color: #388E3C;"></div>
+                            <span>Block 2</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #FFF9C4; border-color: #F9A825;"></div>
+                            <span>Block 3</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #FCE4EC; border-color: #C2185B;"></div>
+                            <span>Block 4</span>
+                        </div>
+                    </div>
+                    <div id="codewordDisplay" class="codeword-container"></div>
+                </div>
+            </div>
+            <div class="status">
+                <div id="blockDisplay" style="width: 100%; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 11px;"></div>
+            </div>
+            <div class="status" id="ecStatus" style="display: none;">
+                <p><strong>Error Correction Status:</strong></p>
+                <div id="ecStatusContent"></div>
+            </div>
         </div>
     </div>
 
+    <script src="reed-solomon.js"></script>
     <script src="qr-decoder.js"></script>
 </body>
 </html>

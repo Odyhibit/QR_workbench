@@ -28,6 +28,7 @@ let isMarkingCollapsed = false;
 let currentEccLevel = '';
 let deinterleavedDataBits = ''; // Concatenated data bits after de-interleaving
 let decodedMessageSize = null;
+let lastDeinterleaveMeta = null; // Debug info for block sizing
 let markedComponents = {
     finders: false,
     alignment: false,
@@ -36,6 +37,11 @@ let markedComponents = {
     dark: false,
     version: false
 };
+
+// Error correction state
+let qrBlocks = []; // Array of {dataBytes: [], eccBytes: [], syndromes: [], errorPositions: [], errorValues: [], originalData: []}
+let currentEcStep = 0; // 0=none, 1=syndromes calculated, 2=errors located, 3=errors valued, 4=corrected
+let syndromeCalculated = false;
 
 const blockSizeTableCsv = `
     1-L,19,7,1,19,,,19
@@ -248,6 +254,23 @@ function toggleMarking() {
     }
 }
 
+// Toggle bitstream recovery panel
+let isBitstreamCollapsed = false;
+function toggleBitstreamPanel() {
+    isBitstreamCollapsed = !isBitstreamCollapsed;
+    const panel = document.getElementById('bitstreamPanel');
+    const toggle = document.getElementById('toggleBitstream');
+    if (panel && toggle) {
+        if (isBitstreamCollapsed) {
+            panel.classList.add('collapsed');
+            toggle.textContent = 'Show';
+        } else {
+            panel.classList.remove('collapsed');
+            toggle.textContent = 'Hide';
+        }
+    }
+}
+
 function parseBlockSizeTable(csv) {
     const map = {};
     const lines = csv.trim().split(/\r?\n/);
@@ -293,12 +316,16 @@ function updateDeinterleaveAvailability() {
         return;
     }
     const multi = hasMultipleBlocks(version, currentEccLevel);
-    deinterleaveButton.disabled = !multi;
+    // For single-block codes, still allow de-interleave to be clicked after recovery
+    deinterleaveButton.disabled = false;
 }
 
 function setDeinterleavedBits(bits) {
     deinterleavedDataBits = bits || '';
-    decodedMessageSize = null;
+    // Preserve previously decoded size if available
+    if (!isSizeDecoded) {
+        decodedMessageSize = null;
+    }
     if (deinterleavedDataBits.length >= 4) {
         const decodeModeButton = document.getElementById('decodeModeButton');
         if (decodeModeButton) decodeModeButton.disabled = false;
@@ -317,6 +344,8 @@ function finalizeBitstreamRecovery() {
         // Single block: we can decode directly from recovered bits
         const cleanBits = recoveredBitstream.replace(/\s+/g, '');
         setDeinterleavedBits(cleanBits);
+        const deinterleaveButton = document.getElementById('deinterleaveButton');
+        if (deinterleaveButton) deinterleaveButton.disabled = false;
     } else {
         // Multi-block: wait for de-interleave step
         if (decodeModeButton) decodeModeButton.disabled = true;
@@ -836,6 +865,12 @@ function resetBitstreamState() {
     if (decodeModeButton) decodeModeButton.disabled = true;
     if (decodeSizeButton) decodeSizeButton.disabled = true;
 
+    // Clear visual codeword display
+    const codewordDisplay = document.getElementById('codewordDisplay');
+    const legend = document.getElementById('bitstreamLegend');
+    if (codewordDisplay) codewordDisplay.innerHTML = '';
+    if (legend) legend.style.display = 'none';
+
     updateBitstreamOutput();
 }
 
@@ -1129,6 +1164,10 @@ function recoverNextByte() {
     }
 
     recoveredBitstream += byteBits.join('');
+
+    // Add visual codeword display
+    addCodewordToDisplay(byteBits.join(''));
+
     updateBitstreamOutput();
 
     if (bitstreamIndex >= dataPositions.length) {
@@ -1139,6 +1178,77 @@ function recoverNextByte() {
     }
 
     drawCleanQR();
+}
+
+// Add a codeword to the visual display
+function addCodewordToDisplay(codeword) {
+    const container = document.getElementById('codewordDisplay');
+    const legend = document.getElementById('bitstreamLegend');
+    if (!container) return;
+
+    // Show legend on first codeword and update it for current block count
+    if (legend && container.children.length === 0) {
+        const version = parseInt(versionSelect.value, 10);
+        const config = getBlockConfig(version, currentEccLevel);
+        const totalBlocks = config ? ((config.g1Blocks || 0) + (config.g2Blocks || 0)) : 1;
+
+        // Show only the legend items for actual blocks
+        const legendItems = legend.querySelectorAll('.legend-item');
+        legendItems.forEach((item, index) => {
+            item.style.display = index < totalBlocks ? 'flex' : 'none';
+        });
+
+        legend.style.display = 'flex';
+    }
+
+    // Calculate which block this codeword belongs to
+    const version = parseInt(versionSelect.value, 10);
+    const config = getBlockConfig(version, currentEccLevel);
+
+    let blockIndex = 0;
+    if (config) {
+        const totalBlocks = (config.g1Blocks || 0) + (config.g2Blocks || 0);
+        const codewordNumber = Math.floor(recoveredBitstream.replace(/\s+/g, '').length / 8) - 1;
+
+        // Determine block based on interleaving pattern
+        // Data codewords are interleaved round-robin across blocks
+        if (totalBlocks > 1) {
+            const maxDataLen = Math.max(config.g1Data || 0, config.g2Data || 0);
+            const totalData = (config.g1Blocks || 0) * (config.g1Data || 0) +
+                            (config.g2Blocks || 0) * (config.g2Data || 0);
+
+            if (codewordNumber < totalData) {
+                // Data codeword
+                const whichRound = Math.floor(codewordNumber / totalBlocks);
+                blockIndex = codewordNumber % totalBlocks;
+            } else {
+                // ECC codeword
+                const eccOffset = codewordNumber - totalData;
+                blockIndex = eccOffset % totalBlocks;
+            }
+        }
+    }
+
+    // Create codeword box
+    const box = document.createElement('div');
+    box.className = `codeword-box block-${blockIndex} current`;
+    box.textContent = codeword;
+
+    // Add block label
+    const label = document.createElement('span');
+    label.className = 'block-label';
+    label.textContent = `B${blockIndex + 1}`;
+    box.appendChild(label);
+
+    container.appendChild(box);
+
+    // Remove "current" class after animation
+    setTimeout(() => {
+        box.classList.remove('current');
+    }, 500);
+
+    // Auto-scroll to show new codeword
+    container.scrollTop = container.scrollHeight;
 }
 
 function recoverAllBitstream() {
@@ -1155,11 +1265,28 @@ function recoverAllBitstream() {
     dataPositions = dataPositions.length ? dataPositions : buildDataPositions();
 
     if (bitstreamIndex < dataPositions.length) {
-        const remainingBits = dataPositions
-            .slice(bitstreamIndex)
+        const remainingPositions = dataPositions.slice(bitstreamIndex);
+
+        const remainingBits = remainingPositions
             .map(pos => (pos.bit ? '1' : '0'))
             .join('');
-        recoveredBitstream += remainingBits;
+
+        // Mark all remaining positions as used (grey them out)
+        if (usedModules) {
+            remainingPositions.forEach(pos => {
+                usedModules[pos.row][pos.col] = true;
+            });
+        }
+
+        // Add visual codewords for all remaining bytes
+        for (let i = 0; i < remainingBits.length; i += 8) {
+            const codeword = remainingBits.slice(i, i + 8);
+            if (codeword.length === 8) {
+                recoveredBitstream += codeword;
+                addCodewordToDisplay(codeword);
+            }
+        }
+
         bitstreamIndex = dataPositions.length;
         updateBitstreamOutput();
     }
@@ -1169,7 +1296,7 @@ function recoverAllBitstream() {
     document.getElementById('deinterleaveButton').disabled = false;
     finalizeBitstreamRecovery();
 
-    // No need to recolor the remaining modules; just redraw to clear highlights
+    // Redraw to show all modules as grey (used)
     drawCleanQR();
 }
 
@@ -1286,24 +1413,44 @@ function deinterleaveData() {
     const decodeSizeButton = document.getElementById('decodeSizeButton');
     if (decodeSizeButton) decodeSizeButton.disabled = true;
 
-    const output = blocks
-        .map((block, idx) => {
-            const dataBits = block.data.join('');
-            const formattedData = formatDataBits(dataBits);
-            const formattedEc = block.ec.join(' ');
-            const blockNumber = idx + 1;
-            return [
-                `Block ${blockNumber} data:`,
-                formattedData,
-                `Block ${blockNumber} ECC:`,
-                formattedEc
-            ].join('\n');
-        })
-        .join('\n\n');
+    lastDeinterleaveMeta = {
+        version,
+        ecc: ecc,
+        g1Blocks: config.g1Blocks || 0,
+        g1Data: config.g1Data || 0,
+        g2Blocks: config.g2Blocks || 0,
+        g2Data: config.g2Data || 0,
+        ecPerBlock: config.ecPerBlock || 0,
+        totalBlocks,
+        totalData,
+        totalEc,
+        expectedTotal,
+        rawBitsLen: rawBits.length,
+        usableBitsLen: usableBits.length,
+        bytesLen: bytes.length
+    };
 
-    const outputArea = document.getElementById('bitstreamOutput');
-    if (outputArea) {
-        outputArea.value = output;
+    // Convert bit strings to byte values and store in qrBlocks for error correction
+    qrBlocks = blocks.map(block => ({
+        dataBytes: block.data.map(bits => parseInt(bits, 2)),
+        eccBytes: block.ec.map(bits => parseInt(bits, 2)),
+        originalData: block.data.map(bits => parseInt(bits, 2)), // Keep original for comparison
+        syndromes: [],
+        errorPositions: [],
+        errorValues: []
+    }));
+
+    // Display blocks as hex
+    displayBlocksAsHex();
+
+    // Reset error correction state
+    currentEcStep = 0;
+    syndromeCalculated = false;
+
+    // Enable Calculate Syndromes button
+    const calculateSyndromesButton = document.getElementById('calculateSyndromesButton');
+    if (calculateSyndromesButton) {
+        calculateSyndromesButton.disabled = false;
     }
 
     // Disable after use to match other one-time actions
@@ -1593,6 +1740,568 @@ function drawImageWithGrid() {
         markedComponents.version = false;
         markVersionButton.classList.remove('active');
     }
+}
+
+// Display blocks as hex bytes
+function displayBlocksAsHex() {
+    const blockDisplay = document.getElementById('blockDisplay');
+    if (!blockDisplay || !qrBlocks.length) return;
+
+    let html = '';
+    qrBlocks.forEach((block, idx) => {
+        html += `<div class="block-container">`;
+        html += `<div class="block-header">Block ${idx + 1}</div>`;
+
+        // Data section
+        html += `<div class="block-section">`;
+        html += `<div class="block-section-label">Data (${block.dataBytes.length} bytes):</div>`;
+        html += `<div class="byte-row">`;
+        block.dataBytes.forEach((byte, i) => {
+            const hexValue = byte.toString(16).toUpperCase().padStart(2, '0');
+            let classes = 'byte-box';
+            const dataId = `block${idx}-data${i}`;
+            html += `<span class="${classes} block-${idx % 4}" id="${dataId}">${hexValue}</span>`;
+        });
+        html += `</div></div>`;
+
+        // ECC section
+        html += `<div class="block-section">`;
+        html += `<div class="block-section-label">ECC (${block.eccBytes.length} bytes):</div>`;
+        html += `<div class="byte-row">`;
+        block.eccBytes.forEach((byte, i) => {
+            const hexValue = byte.toString(16).toUpperCase().padStart(2, '0');
+            const eccId = `block${idx}-ecc${i}`;
+            html += `<span class="byte-box block-${idx % 4}" id="${eccId}">${hexValue}</span>`;
+        });
+        html += `</div></div>`;
+
+        // Syndromes section (initially empty)
+        html += `<div class="block-section" id="block${idx}-syndromes-section" style="display: none;">`;
+        html += `<div class="block-section-label">Syndromes:</div>`;
+        html += `<div class="syndrome-row" id="block${idx}-syndromes"></div>`;
+        html += `</div>`;
+
+        html += `</div>`;
+    });
+
+    blockDisplay.innerHTML = html;
+}
+
+// Using ReedSolomonDecoder GF tables
+const rsDecoder = new ReedSolomonDecoder();
+
+function computeErrorMagnitudes(errLocator, syndromes, errorPositions, codewordLen) {
+    if (!errLocator || errLocator.length === 0) return [];
+    const eccLen = syndromes.length;
+
+    // Omega(x) = (S(x) * Lambda(x)) mod x^(eccLen)
+    const omegaFull = rsDecoder.polyMul([1, ...syndromes], errLocator);
+    const omega = omegaFull.slice(0, eccLen);
+
+    // Lambda'(x): derivative (only odd powers survive in GF(2^m))
+    const locatorDeriv = [];
+    for (let i = 1; i < errLocator.length; i += 2) {
+        locatorDeriv.push(errLocator[i]);
+    }
+
+    const magnitudes = [];
+    errorPositions.forEach(pos => {
+        const xiInv = rsDecoder.expTable[(255 - pos) % 255];
+        const numerator = rsDecoder.polyEval(omega, xiInv);
+        const denominator = rsDecoder.polyEval(locatorDeriv, xiInv);
+        if (denominator === 0) {
+            magnitudes.push(0);
+        } else {
+            const magnitude = rsDecoder.gfDiv(numerator, denominator);
+            magnitudes.push(magnitude);
+        }
+    });
+
+    return magnitudes;
+}
+
+// Decode and correct a full codeword (data + ecc). Returns corrected codeword and details.
+function rsDecodeCorrected(codeword, eccLen, locatorHint = null, positionsHint = null) {
+    const syndromes = rsDecoder.calculateSyndromes(codeword, eccLen);
+    const hasErrors = syndromes.some(s => s !== 0);
+    if (!hasErrors) {
+        return {
+            codeword: [...codeword],
+            errorPositions: [],
+            errorValues: [],
+            syndromes
+        };
+    }
+
+    let locator = locatorHint || rsDecoder.findErrorLocator(syndromes);
+    let errorResults = positionsHint || rsDecoder.findErrors(locator, codeword.length);
+
+    if (errorResults.length === 0 && locator.length > 1) {
+        const reversed = [...locator].reverse();
+        const altResults = rsDecoder.findErrors(reversed, codeword.length);
+        if (altResults.length > 0) {
+            locator = reversed;
+            errorResults = altResults;
+        }
+    }
+
+    // Extract positions and locators from error results
+    const positions = errorResults.map ? errorResults.map(e => e.position) : [];
+    const locators = errorResults.map ? errorResults.map(e => e.locator) : [];
+
+    const errorValues = rsDecoder.forneyAlgorithm(syndromes, locators, codeword.length, locator);
+    const corrected = [...codeword];
+    positions.forEach((pos, i) => {
+        const val = errorValues[i] || 0;
+        // positions from findErrors already map to codeword indices (0 = leftmost)
+        const idx = pos;
+        corrected[idx] ^= val;
+    });
+
+    return {
+        codeword: corrected,
+        errorPositions: positions,
+        errorValues,
+        locator,
+        syndromes
+    };
+}
+
+// Generate RS parity using ReedSolomonDecoder utilities
+function rsEncode(dataBytes, eccLen) {
+    const gen = rsDecoder.generateGeneratorPoly(eccLen); // roots α^0..α^(t-1)
+    const msg = dataBytes.concat(new Array(eccLen).fill(0));
+
+    for (let i = 0; i < dataBytes.length; i++) {
+        const coef = msg[i];
+        if (coef !== 0) {
+            for (let j = 1; j < gen.length; j++) {
+                msg[i + j] ^= rsDecoder.gfMul(gen[j], coef);
+            }
+        }
+    }
+
+    return msg.slice(msg.length - eccLen);
+}
+
+// Calculate Reed-Solomon syndromes
+function calculateSyndromes() {
+    if (!qrBlocks.length) {
+        alert('De-interleave data first to prepare blocks for error correction.');
+        return;
+    }
+
+    qrBlocks.forEach((block, idx) => {
+        const eccLen = block.eccBytes.length;
+        block.syndromes = new Array(eccLen);
+
+        // Combine data and ECC into received codeword
+        const received = [...block.dataBytes, ...block.eccBytes];
+
+        // Calculate syndromes using ReedSolomonDecoder
+        block.syndromes = rsDecoder.calculateSyndromes(received, eccLen);
+
+        // Display syndromes
+        const syndromesDiv = document.getElementById(`block${idx}-syndromes`);
+        const syndromesSection = document.getElementById(`block${idx}-syndromes-section`);
+        if (syndromesDiv && syndromesSection) {
+            syndromesSection.style.display = 'block';
+            let html = '';
+            block.syndromes.forEach((s, i) => {
+                const hexValue = s.toString(16).toUpperCase().padStart(2, '0');
+                const cssClass = s === 0 ? 'syndrome-box zero' : 'syndrome-box nonzero';
+                html += `<span class="${cssClass}">S${i}=${hexValue}</span>`;
+            });
+            syndromesDiv.innerHTML = html;
+        }
+    });
+
+    // Update status
+    const ecStatus = document.getElementById('ecStatus');
+    const ecStatusContent = document.getElementById('ecStatusContent');
+    if (ecStatus && ecStatusContent) {
+        ecStatus.style.display = 'block';
+        let statusHtml = '';
+        qrBlocks.forEach((block, idx) => {
+            const hasErrors = block.syndromes.some(s => s !== 0);
+            const errorCount = hasErrors ? 'Errors detected' : 'No errors';
+            const maxCorrectableOct = Math.floor(block.eccBytes.length / 2);
+            statusHtml += `<p><strong>Block ${idx + 1}:</strong> ${errorCount}. Can correct up to ${maxCorrectableOct} errors.</p>`;
+        });
+        ecStatusContent.innerHTML = statusHtml;
+    }
+
+    currentEcStep = 1;
+    syndromeCalculated = true;
+
+    // Disable Calculate Syndromes, enable Find Error Locations
+    document.getElementById('calculateSyndromesButton').disabled = true;
+    document.getElementById('findErrorLocationsButton').disabled = false;
+
+    // Debug: re-encode data and compare ECC to received
+}
+
+// Find error locations using Berlekamp-Massey and Chien search
+function findErrorLocations() {
+    if (!syndromeCalculated || currentEcStep < 1) {
+        alert('Calculate syndromes first.');
+        return;
+    }
+
+    qrBlocks.forEach((block, blockIdx) => {
+        // Check if there are errors
+        const hasErrors = block.syndromes.some(s => s !== 0);
+        if (!hasErrors) {
+            block.errorPositions = [];
+            return;
+        }
+
+        // Use helper's Berlekamp-Massey to find error locator polynomial
+        const errorLocator = rsDecoder.findErrorLocator(block.syndromes);
+
+        console.log(`Block ${blockIdx + 1}: Error locator polynomial:`, errorLocator);
+        console.log(`Block ${blockIdx + 1}: Syndromes:`, block.syndromes.map(s => s.toString(16)));
+
+        if (!errorLocator || errorLocator.length === 1) {
+            block.errorPositions = [];
+            console.warn(`Block ${blockIdx + 1}: No error locator found`);
+            return;
+        }
+
+        // Use built-in Chien search from ReedSolomonDecoder
+        const n = block.dataBytes.length + block.eccBytes.length;
+        let errorResults = rsDecoder.findErrors(errorLocator, n);
+        let locatorUsed = errorLocator;
+        if (errorResults.length === 0 && errorLocator.length > 1) {
+            // Try reversed coefficient order (common convention mismatch)
+            const reversedLocator = [...errorLocator].reverse();
+            errorResults = rsDecoder.findErrors(reversedLocator, n);
+            if (errorResults.length > 0) {
+                locatorUsed = reversedLocator;
+            }
+        }
+
+        // Extract positions and locators
+        const errorPositions = errorResults.map(e => e.position);
+        const errorLocators = errorResults.map(e => e.locator);
+
+        console.log(`Block ${blockIdx + 1}: Found ${errorPositions.length} error positions:`, errorPositions);
+        console.log(`Block ${blockIdx + 1}: Error locators (Xi):`, errorLocators.map(x => x.toString(16)));
+        console.log(`Block ${blockIdx + 1}: Max correctable: ${Math.floor(block.eccBytes.length / 2)}`);
+
+        block.errorPositions = errorPositions;
+        block.errorLocators = errorLocators;
+        block.errorLocator = locatorUsed;
+
+        // Visual feedback: highlight error positions with yellow outline
+        errorPositions.forEach(pos => {
+            let elementId;
+            if (pos < block.dataBytes.length) {
+                // Error in data
+                elementId = `block${blockIdx}-data${pos}`;
+            } else {
+                // Error in ECC
+                const eccPos = pos - block.dataBytes.length;
+                elementId = `block${blockIdx}-ecc${eccPos}`;
+            }
+
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.classList.add('error-located');
+            }
+        });
+    });
+
+    // Update status
+    const ecStatusContent = document.getElementById('ecStatusContent');
+    if (ecStatusContent) {
+        let statusHtml = '';
+        qrBlocks.forEach((block, idx) => {
+            const hasErrors = block.syndromes.some(s => s !== 0);
+            const errorCount = block.errorPositions.length;
+            const maxCorrectable = Math.floor(block.eccBytes.length / 2);
+
+            if (!hasErrors) {
+                statusHtml += `<p><strong>Block ${idx + 1}:</strong> No errors detected.</p>`;
+            } else if (errorCount === 0) {
+                statusHtml += `<p><strong>Block ${idx + 1}:</strong> Errors detected but could not locate them.</p>`;
+            } else if (errorCount > maxCorrectable) {
+                statusHtml += `<p style="color: #cc0000;"><strong>Block ${idx + 1}:</strong> ${errorCount} errors found - TOO MANY to correct (max ${maxCorrectable}).</p>`;
+            } else {
+                const positions = block.errorPositions.map(p => {
+                    if (p < block.dataBytes.length) return `D${p}`;
+                    return `E${p - block.dataBytes.length}`;
+                }).join(', ');
+                statusHtml += `<p><strong>Block ${idx + 1}:</strong> ${errorCount} error(s) at positions: [${positions}]</p>`;
+            }
+        });
+        ecStatusContent.innerHTML = statusHtml;
+    }
+
+    currentEcStep = 2;
+
+    // Disable Find Error Locations, enable Calculate Error Values
+    document.getElementById('findErrorLocationsButton').disabled = true;
+    document.getElementById('calculateErrorValuesButton').disabled = false;
+}
+
+// Calculate error values using Forney algorithm
+function calculateErrorValues() {
+    if (currentEcStep < 2) {
+        alert('Find error locations first.');
+        return;
+    }
+
+    qrBlocks.forEach((block, blockIdx) => {
+        if (block.errorPositions.length === 0) {
+            block.errorValues = [];
+            return;
+        }
+
+        const codewordLen = block.dataBytes.length + block.eccBytes.length;
+
+        const locator = block.errorLocator || rsDecoder.findErrorLocator(block.syndromes);
+        // Pass errorLocators (Xi values) instead of positions
+        block.errorValues = rsDecoder.forneyAlgorithm(
+            block.syndromes,
+            block.errorLocators,
+            codewordLen,
+            locator
+        );
+
+        // Display error values above the corrupted bytes
+        block.errorPositions.forEach((pos, i) => {
+            const errorValue = block.errorValues[i];
+            let elementId;
+            if (pos < block.dataBytes.length) {
+                elementId = `block${blockIdx}-data${pos}`;
+            } else {
+                const eccPos = pos - block.dataBytes.length;
+                elementId = `block${blockIdx}-ecc${eccPos}`;
+            }
+
+            const element = document.getElementById(elementId);
+            if (element) {
+                // Add error class for red background
+                element.classList.add('error');
+                // Add error value display
+                const errorHex = errorValue.toString(16).toUpperCase().padStart(2, '0');
+                const errorSpan = document.createElement('span');
+                errorSpan.className = 'error-value';
+                errorSpan.textContent = `Δ${errorHex}`;
+                element.appendChild(errorSpan);
+            }
+        });
+    });
+
+    // Update status
+    const ecStatusContent = document.getElementById('ecStatusContent');
+    if (ecStatusContent) {
+        let statusHtml = '';
+        qrBlocks.forEach((block, idx) => {
+            if (block.errorPositions.length === 0) {
+                statusHtml += `<p><strong>Block ${idx + 1}:</strong> No errors to calculate.</p>`;
+            } else {
+                const errorDetails = block.errorPositions.map((p, i) => {
+                    const val = block.errorValues[i] !== undefined ? block.errorValues[i].toString(16).toUpperCase().padStart(2, '0') : '??';
+                    if (p < block.dataBytes.length) return `D${p}=Δ${val}`;
+                    return `E${p - block.dataBytes.length}=Δ${val}`;
+                }).join(', ');
+                statusHtml += `<p><strong>Block ${idx + 1}:</strong> Error values: ${errorDetails}</p>`;
+            }
+        });
+        ecStatusContent.innerHTML = statusHtml;
+    }
+
+    currentEcStep = 3;
+
+    // Disable Calculate Error Values, enable Apply Corrections
+    document.getElementById('calculateErrorValuesButton').disabled = true;
+    document.getElementById('applyCorrectionsButton').disabled = false;
+}
+
+// Apply corrections to fix errors
+function applyCorrections() {
+    if (currentEcStep < 3) {
+        alert('Calculate error values first.');
+        return;
+    }
+
+    qrBlocks.forEach((block, blockIdx) => {
+        // Use our RS correction routine with stored locator/positions
+        const codeword = [...block.dataBytes, ...block.eccBytes];
+        const correctedInfo = rsDecodeCorrected(codeword, block.eccBytes.length, block.errorLocator, block.errorPositions);
+
+        // Update block data/ecc
+        block.dataBytes = correctedInfo.codeword.slice(0, block.dataBytes.length);
+        block.eccBytes = correctedInfo.codeword.slice(block.dataBytes.length);
+        block.errorPositions = correctedInfo.errorPositions || [];
+        block.errorValues = correctedInfo.errorValues || [];
+
+        // Update display for data bytes
+        block.dataBytes.forEach((byte, pos) => {
+            const elementId = `block${blockIdx}-data${pos}`;
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.classList.remove('error', 'error-located');
+                element.classList.add('corrected');
+                element.childNodes[0].textContent = byte.toString(16).toUpperCase().padStart(2, '0');
+                const errorSpan = element.querySelector('.error-value');
+                if (errorSpan) errorSpan.remove();
+            }
+        });
+
+        // Update display for ECC bytes
+        block.eccBytes.forEach((byte, pos) => {
+            const elementId = `block${blockIdx}-ecc${pos}`;
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.classList.remove('error', 'error-located');
+                element.classList.add('corrected');
+                element.childNodes[0].textContent = byte.toString(16).toUpperCase().padStart(2, '0');
+                const errorSpan = element.querySelector('.error-value');
+                if (errorSpan) errorSpan.remove();
+            }
+        });
+    });
+
+    // Update status
+    const ecStatusContent = document.getElementById('ecStatusContent');
+    if (ecStatusContent) {
+        let statusHtml = '<p style="color: #00aa00; font-weight: bold;">✓ All correctable errors have been fixed!</p>';
+        qrBlocks.forEach((block, idx) => {
+            const correctedCount = block.errorValues ? block.errorValues.length : 0;
+            statusHtml += `<p><strong>Block ${idx + 1}:</strong> ${correctedCount} error(s) corrected.</p>`;
+        });
+        ecStatusContent.innerHTML = statusHtml;
+    }
+
+    currentEcStep = 4;
+
+    // Disable Apply Corrections
+    document.getElementById('applyCorrectionsButton').disabled = true;
+
+    // Enable Decode Message button
+    const decodeMessageButton = document.getElementById('decodeMessageButton');
+    if (decodeMessageButton) {
+        decodeMessageButton.disabled = false;
+    }
+
+    // Re-enable Decode Mode with corrected data
+    updateDeinterleavedBitsFromCorrectedBlocks();
+}
+
+// Decode the final message from corrected data
+function decodeMessage() {
+    if (!qrBlocks.length) {
+        alert('No data blocks available.');
+        return;
+    }
+
+    // Check if we have mode and size decoded
+    if (!currentDataMode || currentDataMode === '-') {
+        alert('Please decode the data mode first.');
+        return;
+    }
+
+    if (!decodedMessageSize) {
+        alert('Please decode the message size first.');
+        return;
+    }
+
+    if (currentDataMode !== 'Byte') {
+        alert(`Message decoding is currently only supported for Byte mode. Current mode: ${currentDataMode}`);
+        return;
+    }
+
+    // Concatenate all corrected data bytes from all blocks
+    const allDataBytes = [];
+    qrBlocks.forEach(block => {
+        allDataBytes.push(...block.dataBytes);
+    });
+
+    // Calculate how many bits to skip (mode + size)
+    const version = parseInt(versionSelect.value, 10);
+    const modeBits = 4;
+    const sizeBits = version <= 9 ? 8 : 16;
+    const headerBits = modeBits + sizeBits;
+    const headerBytes = Math.floor(headerBits / 8);
+    const headerBitOffset = headerBits % 8;
+
+    // Extract message bytes
+    let messageBytes = [];
+    let bitOffset = headerBitOffset;
+    let byteIndex = headerBytes;
+
+    for (let i = 0; i < decodedMessageSize; i++) {
+        if (bitOffset === 0) {
+            // Byte-aligned, just take the byte
+            if (byteIndex < allDataBytes.length) {
+                messageBytes.push(allDataBytes[byteIndex]);
+                byteIndex++;
+            }
+        } else {
+            // Not byte-aligned, need to combine bits from two bytes
+            if (byteIndex < allDataBytes.length - 1) {
+                const byte1 = allDataBytes[byteIndex];
+                const byte2 = allDataBytes[byteIndex + 1];
+                // Take remaining bits from byte1 and first bits from byte2
+                const combined = ((byte1 << bitOffset) | (byte2 >> (8 - bitOffset))) & 0xFF;
+                messageBytes.push(combined);
+                byteIndex++;
+            }
+        }
+    }
+
+    // Try to decode as UTF-8
+    let decodedText = '';
+    try {
+        // Try UTF-8 decoding using TextDecoder
+        const decoder = new TextDecoder('utf-8', { fatal: true });
+        decodedText = decoder.decode(new Uint8Array(messageBytes));
+    } catch (e) {
+        // Fall back to ISO-8859-1 (Latin-1) - standard for QR Byte mode
+        decodedText = messageBytes.map(b => String.fromCharCode(b)).join('');
+    }
+
+    // Display the message
+    const messageBox = document.getElementById('decodedMessageBox');
+    const messageContent = document.getElementById('decodedMessageContent');
+    if (messageBox && messageContent) {
+        messageBox.style.display = 'block';
+        messageContent.textContent = decodedText;
+    }
+
+    // Disable the button after decoding
+    const decodeMessageButton = document.getElementById('decodeMessageButton');
+    if (decodeMessageButton) {
+        decodeMessageButton.disabled = true;
+    }
+
+    console.log('Decoded message:', decodedText);
+    console.log('Message bytes:', messageBytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')));
+}
+
+// Update deinterleaved bits from corrected blocks
+function updateDeinterleavedBitsFromCorrectedBlocks() {
+    if (!qrBlocks.length) return;
+
+    // Convert corrected data bytes back to bit string
+    const dataStream = qrBlocks.map(block => {
+        return block.dataBytes.map(byte => {
+            return byte.toString(2).padStart(8, '0');
+        }).join('');
+    }).join('');
+
+    setDeinterleavedBits(dataStream);
+
+    // Re-enable decode mode button with corrected data (only if not already decoded)
+    const decodeModeButton = document.getElementById('decodeModeButton');
+    if (decodeModeButton && !isModeDecoded) {
+        decodeModeButton.disabled = false;
+    }
+
+    // Keep existing mode/size if already decoded - no need to reset
 }
 
 // Handle image upload

@@ -110,6 +110,7 @@ select {
 .canvas-container {
     display: flex;
     flex-direction: column;
+    padding: 0 20px;
 }
 
 .canvas-container h2 {
@@ -122,8 +123,10 @@ select {
 canvas {
     border: 1px solid #ddd;
     display: block;
-    max-width: 100%;
+    max-width: 80vmin;
+    max-height: 80vmin;
     background: white;
+    margin: 0 auto;
 }
 
 .status {
@@ -240,4 +243,234 @@ canvas {
 
 .collapsed {
     display: none;
+}
+
+/* Block Display Styles */
+.block-container {
+    margin-bottom: 20px;
+    padding: 10px;
+    background: #f9f9f9;
+    border-radius: 4px;
+}
+
+.block-header {
+    font-weight: bold;
+    margin-bottom: 8px;
+    font-size: 13px;
+}
+
+.block-section {
+    margin-bottom: 10px;
+}
+
+.block-section-label {
+    font-weight: bold;
+    font-size: 11px;
+    margin-bottom: 4px;
+    color: #555;
+}
+
+.byte-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 8px;
+}
+
+.byte-box {
+    display: inline-block;
+    padding: 4px 6px;
+    background: white;
+    border: 2px solid #ccc;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 11px;
+    min-width: 24px;
+    text-align: center;
+    position: relative;
+}
+
+.byte-box.error {
+    background: #ffcccc;
+    border-color: #cc0000;
+    font-weight: bold;
+}
+
+.byte-box.error-located {
+    outline: 3px solid #FFD700;
+    outline-offset: 2px;
+}
+
+.byte-box.corrected {
+    background: #ccffcc;
+    border-color: #00cc00;
+    animation: correctPulse 0.5s;
+}
+
+@keyframes correctPulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
+.byte-box .error-value {
+    position: absolute;
+    top: -18px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 9px;
+    color: #cc0000;
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.syndrome-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-top: 4px;
+}
+
+.syndrome-box {
+    display: inline-block;
+    padding: 4px 6px;
+    border: 1px solid #ccc;
+    border-radius: 3px;
+    font-family: monospace;
+    font-size: 11px;
+    min-width: 24px;
+    text-align: center;
+}
+
+.syndrome-box.zero {
+    background: #ccffcc;
+    border-color: #00cc00;
+}
+
+.syndrome-box.nonzero {
+    background: #ffcccc;
+    border-color: #cc0000;
+}
+
+#ecStatusContent {
+    font-size: 12px;
+    line-height: 1.6;
+}
+
+#ecStatusContent p {
+    margin: 5px 0;
+}
+
+/* Bitstream visualization */
+.codeword-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 10px;
+    padding: 10px;
+    background: #f9f9f9;
+    border-radius: 4px;
+    min-height: 50px;
+}
+
+.codeword-box {
+    display: inline-block;
+    padding: 6px 8px;
+    border: 2px solid;
+    border-radius: 4px;
+    font-family: monospace;
+    font-size: 12px;
+    font-weight: bold;
+    position: relative;
+    transition: all 0.3s ease;
+}
+
+.codeword-box.current {
+    animation: pulse 0.5s;
+    box-shadow: 0 0 10px rgba(255, 140, 0, 0.8);
+}
+
+@keyframes pulse {
+    0%, 100% { transform: scale(1); }
+    50% { transform: scale(1.1); }
+}
+
+/* Block colors for interleaving visualization */
+.codeword-box.block-0 {
+    background: #E3F2FD;
+    border-color: #1976D2;
+    color: #0D47A1;
+}
+
+.codeword-box.block-1 {
+    background: #E8F5E9;
+    border-color: #388E3C;
+    color: #1B5E20;
+}
+
+.codeword-box.block-2 {
+    background: #FFF9C4;
+    border-color: #F9A825;
+    color: #F57F17;
+}
+
+.codeword-box.block-3 {
+    background: #FCE4EC;
+    border-color: #C2185B;
+    color: #880E4F;
+}
+
+/* Match byte-box colors to codeword blocks for visual linkage */
+.byte-box.block-0 {
+    background: #E3F2FD;
+    border-color: #1976D2;
+    color: #0D47A1;
+}
+
+.byte-box.block-1 {
+    background: #E8F5E9;
+    border-color: #388E3C;
+    color: #1B5E20;
+}
+
+.byte-box.block-2 {
+    background: #FFF9C4;
+    border-color: #F9A825;
+    color: #F57F17;
+}
+
+.byte-box.block-3 {
+    background: #FCE4EC;
+    border-color: #C2185B;
+    color: #880E4F;
+}
+
+.codeword-box .block-label {
+    position: absolute;
+    top: -8px;
+    right: -8px;
+    background: rgba(0, 0, 0, 0.7);
+    color: white;
+    font-size: 9px;
+    padding: 2px 4px;
+    border-radius: 3px;
+}
+
+.bitstream-legend {
+    display: flex;
+    gap: 15px;
+    margin-bottom: 10px;
+    font-size: 11px;
+}
+
+.legend-item {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.legend-color {
+    width: 20px;
+    height: 14px;
+    border: 1px solid #666;
+    border-radius: 3px;
 }
