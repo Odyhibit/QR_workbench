@@ -2561,15 +2561,24 @@ function applyCorrections() {
     }
 
     qrBlocks.forEach((block, blockIdx) => {
-        // Use our RS correction routine with stored locator/positions
         const codeword = [...block.dataBytes, ...block.eccBytes];
-        const correctedInfo = rsDecodeCorrected(codeword, block.eccBytes.length, block.errorLocator, block.errorPositions);
-
-        // Update block data/ecc
-        block.dataBytes = correctedInfo.codeword.slice(0, block.dataBytes.length);
-        block.eccBytes = correctedInfo.codeword.slice(block.dataBytes.length);
-        block.errorPositions = correctedInfo.errorPositions || [];
-        block.errorValues = correctedInfo.errorValues || [];
+        if (block.errorPositions && block.errorPositions.length && block.errorValues && block.errorValues.length) {
+            // Apply previously computed deltas directly so the same signs are used as displayed
+            block.errorPositions.forEach((pos, i) => {
+                if (pos < 0 || pos >= codeword.length) return;
+                const delta = block.errorValues[i] || 0;
+                codeword[pos] = rsDecoder.field.addOrSubtract(codeword[pos], delta);
+            });
+            block.dataBytes = codeword.slice(0, block.dataBytes.length);
+            block.eccBytes = codeword.slice(block.dataBytes.length);
+        } else {
+            // Fallback: run decoder again if we somehow lack stored deltas
+            const correctedInfo = rsDecodeCorrected(codeword, block.eccBytes.length, block.errorLocator, block.errorPositions);
+            block.dataBytes = correctedInfo.codeword.slice(0, block.dataBytes.length);
+            block.eccBytes = correctedInfo.codeword.slice(block.dataBytes.length);
+            block.errorPositions = correctedInfo.errorPositions || [];
+            block.errorValues = correctedInfo.errorValues || [];
+        }
 
         // Update display for data bytes
         block.dataBytes.forEach((byte, pos) => {
