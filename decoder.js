@@ -28,10 +28,15 @@ let isMarkingCollapsed = false;
 let isCleanCanvasCollapsed = false;
 let isBlocksCollapsed = false;
 let isBitstreamCollapsed = false;
+let isFormatInfoCollapsed = false;
+let isRecoveryCollapsed = false;
+let isErrorCorrectionCollapsed = false;
 let currentEccLevel = '';
 let deinterleavedDataBits = ''; // Concatenated data bits after de-interleaving
 let decodedMessageSize = null;
 let lastDeinterleaveMeta = null; // Debug info for block sizing
+let eciAssignment = null; // ECI assignment number (null if no ECI)
+let eciEncoding = null; // Character encoding from ECI
 let markedComponents = {
     finders: false,
     alignment: false,
@@ -719,6 +724,150 @@ function toggleBlocksPanel() {
     }
 }
 
+// Toggle format information visibility
+function toggleFormatInfo() {
+    isFormatInfoCollapsed = !isFormatInfoCollapsed;
+    const content = document.getElementById('formatInfoContent');
+    const toggle = document.getElementById('toggleFormatInfo');
+    if (content && toggle) {
+        if (isFormatInfoCollapsed) {
+            content.classList.add('collapsed');
+            toggle.textContent = 'Show';
+        } else {
+            content.classList.remove('collapsed');
+            toggle.textContent = 'Hide';
+        }
+    }
+}
+
+// Toggle recovery controls visibility
+function toggleRecovery() {
+    isRecoveryCollapsed = !isRecoveryCollapsed;
+    const content = document.getElementById('recoveryContent');
+    const toggle = document.getElementById('toggleRecovery');
+    if (content && toggle) {
+        if (isRecoveryCollapsed) {
+            content.classList.add('collapsed');
+            toggle.textContent = 'Show';
+        } else {
+            content.classList.remove('collapsed');
+            toggle.textContent = 'Hide';
+        }
+    }
+}
+
+// Toggle error correction controls visibility
+function toggleErrorCorrection() {
+    isErrorCorrectionCollapsed = !isErrorCorrectionCollapsed;
+    const content = document.getElementById('errorCorrectionContent');
+    const toggle = document.getElementById('toggleErrorCorrection');
+    if (content && toggle) {
+        if (isErrorCorrectionCollapsed) {
+            content.classList.add('collapsed');
+            toggle.textContent = 'Show';
+        } else {
+            content.classList.remove('collapsed');
+            toggle.textContent = 'Hide';
+        }
+    }
+}
+
+// Get character count bit length based on mode and version
+function getCharCountBitLength(mode, version) {
+    // Returns the number of bits used for character count based on mode and version
+    const bitLengths = {
+        'Numeric': [10, 12, 14],        // v1-9, v10-26, v27-40
+        'Alphanumeric': [9, 11, 13],    // v1-9, v10-26, v27-40
+        'Byte': [8, 16, 16],            // v1-9, v10-40, v10-40
+        'Kanji': [8, 10, 12]            // v1-9, v10-26, v27-40
+    };
+
+    if (!bitLengths[mode]) return 8; // default
+
+    if (version <= 9) return bitLengths[mode][0];
+    if (version <= 26) return bitLengths[mode][1];
+    return bitLengths[mode][2];
+}
+
+// Decode ECI assignment number from bit string
+// Returns { value: number, bitsRead: number }
+function decodeECIAssignment(bits, startIndex) {
+    if (startIndex >= bits.length) {
+        return { value: 0, bitsRead: 0 };
+    }
+
+    const firstBit = bits[startIndex];
+
+    if (firstBit === '0') {
+        // Value 0-127: 8 bits total (0 + 7 bits)
+        if (startIndex + 8 > bits.length) {
+            return { value: 0, bitsRead: 0 };
+        }
+        const valueBits = bits.slice(startIndex + 1, startIndex + 8);
+        return {
+            value: parseInt(valueBits, 2),
+            bitsRead: 8
+        };
+    } else if (startIndex + 1 < bits.length && bits[startIndex + 1] === '0') {
+        // Value 128-16383: 16 bits total (10 + 14 bits)
+        if (startIndex + 16 > bits.length) {
+            return { value: 0, bitsRead: 0 };
+        }
+        const valueBits = bits.slice(startIndex + 2, startIndex + 16);
+        return {
+            value: parseInt(valueBits, 2),
+            bitsRead: 16
+        };
+    } else {
+        // Value 16384-999999: 24 bits total (110 + 21 bits)
+        if (startIndex + 24 > bits.length) {
+            return { value: 0, bitsRead: 0 };
+        }
+        const valueBits = bits.slice(startIndex + 3, startIndex + 24);
+        return {
+            value: parseInt(valueBits, 2),
+            bitsRead: 24
+        };
+    }
+}
+
+// Get character encoding name from ECI assignment number
+function getECIEncoding(eciValue) {
+    const eciMap = {
+        0: 'CP437',           // Default
+        1: 'ISO-8859-1',      // Latin-1 (Western European)
+        2: 'CP437',           // US ASCII
+        3: 'ISO-8859-1',      // Default (Latin-1)
+        4: 'ISO-8859-2',      // Latin-2 (Central European)
+        5: 'ISO-8859-3',      // Latin-3 (South European)
+        6: 'ISO-8859-4',      // Latin-4 (North European)
+        7: 'ISO-8859-5',      // Cyrillic
+        8: 'ISO-8859-6',      // Arabic
+        9: 'ISO-8859-7',      // Greek
+        10: 'ISO-8859-8',     // Hebrew
+        11: 'ISO-8859-9',     // Turkish
+        12: 'ISO-8859-10',    // Nordic
+        13: 'ISO-8859-11',    // Thai
+        15: 'ISO-8859-13',    // Baltic
+        16: 'ISO-8859-14',    // Celtic
+        17: 'ISO-8859-15',    // Western European with Euro
+        18: 'ISO-8859-16',    // South-Eastern European
+        20: 'Shift_JIS',      // Japanese
+        21: 'Windows-1250',   // Central European
+        22: 'Windows-1251',   // Cyrillic
+        23: 'Windows-1252',   // Western European
+        24: 'Windows-1256',   // Arabic
+        25: 'UTF-16BE',       // Unicode Big Endian
+        26: 'UTF-8',          // Unicode (most common)
+        27: 'US-ASCII',       // ASCII
+        28: 'Big5',           // Traditional Chinese
+        29: 'GB2312',         // Simplified Chinese
+        30: 'EUC-KR'          // Korean
+    };
+
+    return eciMap[eciValue] || 'ISO-8859-1'; // Default to Latin-1
+}
+
 function parseBlockSizeTable(csv) {
     const map = {};
     const lines = csv.trim().split(/\r?\n/);
@@ -784,13 +933,13 @@ function finalizeBitstreamRecovery() {
     isBitstreamRecovered = true;
     updateDeinterleaveAvailability();
 
+    const cleanBits = recoveredBitstream.replace(/\s+/g, '');
     const decodeModeButton = document.getElementById('decodeModeButton');
     const version = parseInt(versionSelect.value, 10);
     const multi = hasMultipleBlocks(version, currentEccLevel);
 
     if (!multi) {
         // Single block: we can decode directly from recovered bits
-        const cleanBits = recoveredBitstream.replace(/\s+/g, '');
         setDeinterleavedBits(cleanBits);
         const deinterleaveButton = document.getElementById('deinterleaveButton');
         if (deinterleaveButton) deinterleaveButton.disabled = false;
@@ -1411,11 +1560,20 @@ function decodeMode() {
         usedModules = Array(moduleCount).fill(null).map(() => Array(moduleCount).fill(false));
     }
 
+    let bitOffset = 0;
+    let totalBitsUsed = 0;
+    let displayLabel = '';
+
+    // Read first mode indicator
     const modeBitsString = deinterleavedDataBits.slice(0, 4);
     const modeBits = parseInt(modeBitsString, 2);
+    bitOffset = 4;
+    totalBitsUsed = 4;
 
     // Decode the mode
     let modeName = 'Unknown';
+    let hasECI = false;
+
     switch (modeBits) {
         case 0b0001:
             modeName = 'Numeric';
@@ -1430,27 +1588,77 @@ function decodeMode() {
             modeName = 'Kanji';
             break;
         case 0b0111:
-            modeName = 'ECI';
+            // ECI mode - need to read ECI assignment and then the actual mode
+            hasECI = true;
+            const eciResult = decodeECIAssignment(deinterleavedDataBits, bitOffset);
+            if (eciResult.bitsRead === 0) {
+                alert('Failed to decode ECI assignment number.');
+                return;
+            }
+
+            eciAssignment = eciResult.value;
+            eciEncoding = getECIEncoding(eciAssignment);
+            bitOffset += eciResult.bitsRead;
+            totalBitsUsed += eciResult.bitsRead;
+
+            displayLabel = `ECI (0111) → ${eciEncoding} (${eciAssignment})\n`;
+
+            // Now read the actual data mode (next 4 bits)
+            if (bitOffset + 4 > deinterleavedDataBits.length) {
+                alert('Not enough bits to read data mode after ECI.');
+                return;
+            }
+
+            const actualModeBitsString = deinterleavedDataBits.slice(bitOffset, bitOffset + 4);
+            const actualModeBits = parseInt(actualModeBitsString, 2);
+            bitOffset += 4;
+            totalBitsUsed += 4;
+
+            switch (actualModeBits) {
+                case 0b0001:
+                    modeName = 'Numeric';
+                    break;
+                case 0b0010:
+                    modeName = 'Alphanumeric';
+                    break;
+                case 0b0100:
+                    modeName = 'Byte';
+                    break;
+                case 0b1000:
+                    modeName = 'Kanji';
+                    break;
+                default:
+                    modeName = `Unknown (${actualModeBits.toString(2).padStart(4, '0')})`;
+            }
+
+            displayLabel += `${modeName} (${actualModeBitsString})`;
             break;
         default:
             modeName = `Unknown (${modeBits.toString(2).padStart(4, '0')})`;
     }
 
-    // Display the mode
+    // Display the mode (with ECI info if applicable)
     currentDataMode = modeName;
-    document.getElementById('dataMode').textContent = modeName;
+    if (hasECI) {
+        document.getElementById('dataMode').textContent = `${modeName} (ECI ${eciAssignment}: ${eciEncoding})`;
+    } else {
+        document.getElementById('dataMode').textContent = modeName;
+        // Reset ECI state if no ECI
+        eciAssignment = null;
+        eciEncoding = null;
+    }
 
-    // Enable decode size button only if mode is Byte
+    // Enable decode size button for supported modes
     const decodeSizeButton = document.getElementById('decodeSizeButton');
-    if (modeName === 'Byte') {
+    if (['Numeric', 'Alphanumeric', 'Byte'].includes(modeName)) {
         decodeSizeButton.disabled = false;
     } else {
         decodeSizeButton.disabled = true;
     }
 
-    // Mark the first 4 bits as used for coloring
-    if (usedModules && dataPositions && dataPositions.length >= 4) {
-        for (let i = 0; i < 4; i++) {
+    // Mark all used bits for coloring
+    if (usedModules && dataPositions && dataPositions.length >= totalBitsUsed) {
+        for (let i = 0; i < totalBitsUsed; i++) {
             const pos = dataPositions[i];
             if (usedModules[pos.row]) {
                 usedModules[pos.row][pos.col] = true;
@@ -1462,26 +1670,25 @@ function decodeMode() {
     const outputArea = document.getElementById('bitstreamOutput');
     if (outputArea && outputArea.value) {
         const currentOutput = outputArea.value;
-        // Replace the first 4 bits with the mode name
-        const modeLabel = `${modeName} (${modeBitsString})`;
+        // Create label for display
+        const modeLabel = hasECI ? displayLabel : `${modeName} (${modeBitsString})`;
+
         // Find where the bitstream starts (could be in block format or plain format)
         const blockMatch = currentOutput.match(/^Block \d+ data:\s*/);
         if (blockMatch) {
-            // Multi-block format: replace first 4 bits after "Block 1 data:"
+            // Multi-block format: replace bits after "Block 1 data:"
             const afterLabel = currentOutput.substring(blockMatch[0].length);
-            // Get just the first line of bits (before the first newline)
             const firstLineMatch = afterLabel.match(/^([^\n]*)/);
             const firstLine = firstLineMatch ? firstLineMatch[1] : afterLabel;
             const restOfOutput = afterLabel.substring(firstLine.length);
-            // Strip spaces from just this line
             const cleanBits = firstLine.replace(/\s+/g, '');
-            const rest = cleanBits.substring(4);
+            const rest = cleanBits.substring(totalBitsUsed);
             outputArea.value = blockMatch[0] + modeLabel + '\n' + formatBitstream(rest) + restOfOutput;
         } else {
-            // Single block or raw bitstream: replace first 4 bits
+            // Single block or raw bitstream: replace bits
             const cleanOutput = currentOutput.replace(/\s+/g, '');
-            if (cleanOutput.length >= 4) {
-                const rest = cleanOutput.substring(4);
+            if (cleanOutput.length >= totalBitsUsed) {
+                const rest = cleanOutput.substring(totalBitsUsed);
                 outputArea.value = modeLabel + '\n' + formatBitstream(rest);
             }
         }
@@ -1496,17 +1703,32 @@ function decodeMode() {
     drawCleanQR();
 }
 
-// Decode the message size (8 bits for v1-9, 16 bits for v10-40)
+// Decode the message size/character count
 function decodeSize() {
-    if (isSizeDecoded || currentDataMode !== 'Byte') return;
+    if (isSizeDecoded) return;
+
+    // Only decode for supported modes
+    if (!['Numeric', 'Alphanumeric', 'Byte'].includes(currentDataMode)) {
+        alert(`Size decoding not yet supported for ${currentDataMode} mode.`);
+        return;
+    }
+
     if (!deinterleavedDataBits || deinterleavedDataBits.length < 12) {
         alert('Decode mode first, then ensure de-interleaved data is available.');
         return;
     }
 
     const version = parseInt(versionSelect.value, 10);
-    const bitCount = version <= 9 ? 8 : 16;
-    const start = 4; // after mode bits
+    const bitCount = getCharCountBitLength(currentDataMode, version);
+
+    // Calculate start position (accounting for ECI if present)
+    let start = 4; // Initial mode bits
+    if (eciAssignment !== null) {
+        // ECI is present, need to skip ECI assignment and actual mode bits
+        const eciResult = decodeECIAssignment(deinterleavedDataBits, 4);
+        start = 4 + eciResult.bitsRead + 4; // mode + ECI assignment + actual mode
+    }
+
     if (deinterleavedDataBits.length < start + bitCount) {
         alert('Not enough bits to decode size.');
         return;
@@ -1516,12 +1738,12 @@ function decodeSize() {
     const sizeValue = parseInt(sizeBitsStr, 2);
     decodedMessageSize = sizeValue;
 
-    // Mark bits used for coloring
+    // Mark bits used for coloring (including header bits already marked in decodeMode)
     if (!dataPositions || !dataPositions.length) {
         dataPositions = buildDataPositions();
     }
     if (usedModules && dataPositions && dataPositions.length >= start + bitCount) {
-        for (let i = 0; i < start + bitCount; i++) {
+        for (let i = start; i < start + bitCount; i++) {
             const pos = dataPositions[i];
             if (usedModules[pos.row]) {
                 usedModules[pos.row][pos.col] = true;
@@ -1529,14 +1751,15 @@ function decodeSize() {
         }
     }
 
-    // Display the size
-    document.getElementById('messageSize').textContent = `${sizeValue} bytes`;
+    // Display the size with appropriate units
+    const unit = currentDataMode === 'Byte' ? 'bytes' : 'characters';
+    document.getElementById('messageSize').textContent = `${sizeValue} ${unit}`;
 
     // Update the bitstream display to replace size bits with size label
     const outputArea = document.getElementById('bitstreamOutput');
     if (outputArea && outputArea.value) {
         const currentOutput = outputArea.value;
-        const sizeLabel = `${sizeValue} bytes (${sizeBitsStr})`;
+        const sizeLabel = `${sizeValue} ${unit} (${sizeBitsStr})`;
 
         // Find where the bitstream starts (could be in block format or plain format)
         const blockMatch = currentOutput.match(/^Block \d+ data:\s*/);
@@ -1683,10 +1906,10 @@ function addCodewordToDisplay(codeword) {
     box.textContent = codeword;
 
     // Add block label
-    const label = document.createElement('span');
-    label.className = 'block-label';
-    label.textContent = `B${blockIndex + 1}`;
-    box.appendChild(label);
+    //const label = document.createElement('span');
+    //label.className = 'block-label';
+    //label.textContent = `B${blockIndex + 1}`;
+    //box.appendChild(label);
 
     container.appendChild(box);
 
@@ -1748,6 +1971,46 @@ function recoverAllBitstream() {
     drawCleanQR();
 }
 
+// Reorganize the bitstream display to show blocks in order (block 1, then block 2, etc.)
+function reorganizeBitstreamDisplay(blocks) {
+    const container = document.getElementById('codewordDisplay');
+    if (!container) return;
+
+    // Clear the existing display
+    container.innerHTML = '';
+
+    // Rebuild the display with blocks in order
+    blocks.forEach((block, blockIdx) => {
+        // Add data codewords for this block
+        block.data.forEach((codeword) => {
+            const box = document.createElement('div');
+            box.className = `codeword-box block-${blockIdx % 4}`;
+            box.textContent = codeword;
+
+            //const label = document.createElement('span');
+            //label.className = 'block-label';
+            //label.textContent = `B${blockIdx + 1}`;
+            //box.appendChild(label);
+
+            container.appendChild(box);
+        });
+
+        // Add EC codewords for this block
+        block.ec.forEach((codeword) => {
+            const box = document.createElement('div');
+            box.className = `codeword-box block-${blockIdx % 4}`;
+            box.textContent = codeword;
+
+            const label = document.createElement('span');
+            label.className = 'block-label';
+            label.textContent = `EC`;
+            box.appendChild(label);
+
+            container.appendChild(box);
+        });
+    });
+}
+
 function deinterleaveData() {
     if (!isBitstreamRecovered) {
         alert('Recover the full bitstream before de-interleaving.');
@@ -1766,6 +2029,10 @@ function deinterleaveData() {
     if (!totalBlocks) {
         alert('Block information is missing or invalid for this version/ECC.');
         return;
+    }
+    const blockCountSpan = document.getElementById('blockCount');
+    if (blockCountSpan) {
+        blockCountSpan.textContent = totalBlocks;
     }
 
     const dataLens = [];
@@ -1856,6 +2123,8 @@ function deinterleaveData() {
     isSizeDecoded = false;
     currentDataMode = '';
     decodedMessageSize = null;
+    eciAssignment = null;
+    eciEncoding = null;
     document.getElementById('dataMode').textContent = '-';
     document.getElementById('messageSize').textContent = '-';
     const decodeSizeButton = document.getElementById('decodeSizeButton');
@@ -1890,6 +2159,9 @@ function deinterleaveData() {
 
     // Display blocks as hex
     displayBlocksAsHex();
+
+    // Reorganize bitstream display to match block order
+    reorganizeBitstreamDisplay(blocks);
 
     // Reset error correction state
     currentEcStep = 0;
@@ -2131,6 +2403,8 @@ function drawImageWithGrid() {
     isBitstreamRecovered = false;
     currentDataMode = '';
     currentEccLevel = '';
+    eciAssignment = null;
+    eciEncoding = null;
     dataPositions = [];
     bitstreamIndex = 0;
     currentHighlight = [];
@@ -2174,6 +2448,9 @@ function drawImageWithGrid() {
     // Update tab 2 version info
     document.getElementById('versionInfo2').textContent = `${moduleCount}x${moduleCount}`;
     document.getElementById('versionLabel2').textContent = `Version ${version}:`;
+    // Reset block count display until deinterleave sets it
+    const blockCountSpan = document.getElementById('blockCount');
+    if (blockCountSpan) blockCountSpan.textContent = '-';
 
     // Enable/disable alignment button based on version (version 2+)
     const markAlignmentButton = document.getElementById('markAlignment');
@@ -2673,6 +2950,93 @@ function applyCorrections() {
     updateDeinterleavedBitsFromCorrectedBlocks();
 }
 
+// Decode numeric mode message
+function decodeNumericMessage(dataBits, charCount) {
+    let result = '';
+    let bitIndex = 0;
+    let remainingChars = charCount;
+
+    while (remainingChars > 0) {
+        if (remainingChars >= 3) {
+            // 3 digits encoded in 10 bits
+            if (bitIndex + 10 <= dataBits.length) {
+                const bits = dataBits.slice(bitIndex, bitIndex + 10);
+                const value = parseInt(bits, 2);
+                result += value.toString().padStart(3, '0');
+                bitIndex += 10;
+                remainingChars -= 3;
+            } else {
+                break;
+            }
+        } else if (remainingChars === 2) {
+            // 2 digits encoded in 7 bits
+            if (bitIndex + 7 <= dataBits.length) {
+                const bits = dataBits.slice(bitIndex, bitIndex + 7);
+                const value = parseInt(bits, 2);
+                result += value.toString().padStart(2, '0');
+                bitIndex += 7;
+                remainingChars -= 2;
+            } else {
+                break;
+            }
+        } else {
+            // 1 digit encoded in 4 bits
+            if (bitIndex + 4 <= dataBits.length) {
+                const bits = dataBits.slice(bitIndex, bitIndex + 4);
+                const value = parseInt(bits, 2);
+                result += value.toString();
+                bitIndex += 4;
+                remainingChars -= 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
+// Decode alphanumeric mode message
+function decodeAlphanumericMessage(dataBits, charCount) {
+    // Alphanumeric character set (45 characters)
+    const alphanumericTable = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ $%*+-./:';
+
+    let result = '';
+    let bitIndex = 0;
+    let remainingChars = charCount;
+
+    while (remainingChars > 0) {
+        if (remainingChars >= 2) {
+            // 2 characters encoded in 11 bits
+            if (bitIndex + 11 <= dataBits.length) {
+                const bits = dataBits.slice(bitIndex, bitIndex + 11);
+                const value = parseInt(bits, 2);
+                // Split into two characters: first = value / 45, second = value % 45
+                const char1 = alphanumericTable[Math.floor(value / 45)];
+                const char2 = alphanumericTable[value % 45];
+                result += char1 + char2;
+                bitIndex += 11;
+                remainingChars -= 2;
+            } else {
+                break;
+            }
+        } else {
+            // 1 character encoded in 6 bits
+            if (bitIndex + 6 <= dataBits.length) {
+                const bits = dataBits.slice(bitIndex, bitIndex + 6);
+                const value = parseInt(bits, 2);
+                result += alphanumericTable[value];
+                bitIndex += 6;
+                remainingChars -= 1;
+            } else {
+                break;
+            }
+        }
+    }
+
+    return result;
+}
+
 // Decode the final message from corrected data
 function decodeMessage() {
     if (!qrBlocks.length) {
@@ -2691,59 +3055,71 @@ function decodeMessage() {
         return;
     }
 
-    if (currentDataMode !== 'Byte') {
-        alert(`Message decoding is currently only supported for Byte mode. Current mode: ${currentDataMode}`);
+    if (!['Numeric', 'Alphanumeric', 'Byte'].includes(currentDataMode)) {
+        alert(`Message decoding is not yet supported for ${currentDataMode} mode.`);
         return;
     }
 
-    // Concatenate all corrected data bytes from all blocks
-    const allDataBytes = [];
-    qrBlocks.forEach(block => {
-        allDataBytes.push(...block.dataBytes);
-    });
+    // Concatenate all corrected data bytes from all blocks as bit string
+    const allDataBits = qrBlocks.map(block => {
+        return block.dataBytes.map(byte => {
+            return byte.toString(2).padStart(8, '0');
+        }).join('');
+    }).join('');
 
-    // Calculate how many bits to skip (mode + size)
+    // Calculate how many bits to skip (mode + ECI + actual mode + size)
     const version = parseInt(versionSelect.value, 10);
-    const modeBits = 4;
-    const sizeBits = version <= 9 ? 8 : 16;
-    const headerBits = modeBits + sizeBits;
-    const headerBytes = Math.floor(headerBits / 8);
-    const headerBitOffset = headerBits % 8;
+    let headerBits = 4; // Initial mode indicator
 
-    // Extract message bytes
-    let messageBytes = [];
-    let bitOffset = headerBitOffset;
-    let byteIndex = headerBytes;
-
-    for (let i = 0; i < decodedMessageSize; i++) {
-        if (bitOffset === 0) {
-            // Byte-aligned, just take the byte
-            if (byteIndex < allDataBytes.length) {
-                messageBytes.push(allDataBytes[byteIndex]);
-                byteIndex++;
-            }
-        } else {
-            // Not byte-aligned, need to combine bits from two bytes
-            if (byteIndex < allDataBytes.length - 1) {
-                const byte1 = allDataBytes[byteIndex];
-                const byte2 = allDataBytes[byteIndex + 1];
-                // Take remaining bits from byte1 and first bits from byte2
-                const combined = ((byte1 << bitOffset) | (byte2 >> (8 - bitOffset))) & 0xFF;
-                messageBytes.push(combined);
-                byteIndex++;
-            }
-        }
+    // Account for ECI if present
+    if (eciAssignment !== null) {
+        const eciResult = decodeECIAssignment(allDataBits, 4);
+        headerBits += eciResult.bitsRead; // ECI assignment bits
+        headerBits += 4; // Actual mode indicator after ECI
     }
 
-    // Try to decode as UTF-8
+    // Add character count bits
+    const sizeBits = getCharCountBitLength(currentDataMode, version);
+    headerBits += sizeBits;
+
+    // Extract message data bits (after header)
+    const messageBits = allDataBits.slice(headerBits);
+
+    // Decode based on mode
     let decodedText = '';
-    try {
-        // Try UTF-8 decoding using TextDecoder
-        const decoder = new TextDecoder('utf-8', { fatal: true });
-        decodedText = decoder.decode(new Uint8Array(messageBytes));
-    } catch (e) {
-        // Fall back to ISO-8859-1 (Latin-1) - standard for QR Byte mode
-        decodedText = messageBytes.map(b => String.fromCharCode(b)).join('');
+    if (currentDataMode === 'Numeric') {
+        decodedText = decodeNumericMessage(messageBits, decodedMessageSize);
+    } else if (currentDataMode === 'Alphanumeric') {
+        decodedText = decodeAlphanumericMessage(messageBits, decodedMessageSize);
+    } else if (currentDataMode === 'Byte') {
+        // For Byte mode, extract bytes from the bit string
+        const messageBytes = [];
+        for (let i = 0; i < decodedMessageSize && i * 8 < messageBits.length; i++) {
+            const byteBits = messageBits.slice(i * 8, (i + 1) * 8);
+            if (byteBits.length === 8) {
+                messageBytes.push(parseInt(byteBits, 2));
+            }
+        }
+
+        // Decode using ECI encoding if available, otherwise try UTF-8 then fallback
+        let encodingUsed = eciEncoding || 'utf-8';
+        try {
+            const decoder = new TextDecoder(encodingUsed, { fatal: true });
+            decodedText = decoder.decode(new Uint8Array(messageBytes));
+        } catch (e) {
+            // If ECI encoding fails or we tried UTF-8, fall back to ISO-8859-1
+            if (encodingUsed !== 'ISO-8859-1') {
+                try {
+                    const fallbackDecoder = new TextDecoder('ISO-8859-1', { fatal: false });
+                    decodedText = fallbackDecoder.decode(new Uint8Array(messageBytes));
+                } catch (e2) {
+                    // Last resort: direct character mapping
+                    decodedText = messageBytes.map(b => String.fromCharCode(b)).join('');
+                }
+            } else {
+                decodedText = messageBytes.map(b => String.fromCharCode(b)).join('');
+            }
+        }
     }
 
     // Display the message
@@ -2760,8 +3136,7 @@ function decodeMessage() {
         decodeMessageButton.disabled = true;
     }
 
-    console.log('Decoded message:', decodedText);
-    console.log('Message bytes:', messageBytes.map(b => b.toString(16).toUpperCase().padStart(2, '0')));
+    console.log(`Decoded ${currentDataMode} message:`, decodedText);
 }
 
 // Update deinterleaved bits from corrected blocks
@@ -2843,3 +3218,59 @@ borderTop.addEventListener('input', drawImageWithGrid);
 borderBottom.addEventListener('input', drawImageWithGrid);
 borderLeft.addEventListener('input', drawImageWithGrid);
 borderRight.addEventListener('input', drawImageWithGrid);
+
+// Copy data codewords to clipboard as space-delimited hex
+function copyDataToClipboard(button) {
+    if (!qrBlocks || qrBlocks.length === 0) {
+        alert('No data blocks available. Please decode a QR code first.');
+        return;
+    }
+
+    const allDataBytes = [];
+    qrBlocks.forEach(block => {
+        allDataBytes.push(...block.dataBytes);
+    });
+
+    const hexString = allDataBytes
+        .map(byte => byte.toString(16).toUpperCase().padStart(2, '0'))
+        .join(' ');
+
+    navigator.clipboard.writeText(hexString).then(() => {
+        // Visual feedback
+        const originalText = button.textContent;
+        button.textContent = 'Copied!';
+        setTimeout(() => {
+            button.textContent = originalText;
+        }, 1500);
+    }).catch(err => {
+        alert('Failed to copy to clipboard: ' + err);
+    });
+}
+
+// Copy ECC codewords to clipboard as space-delimited hex
+function copyEccToClipboard(button) {
+    if (!qrBlocks || qrBlocks.length === 0) {
+        alert('No ECC blocks available. Please decode a QR code first.');
+        return;
+    }
+
+    const allEccBytes = [];
+    qrBlocks.forEach(block => {
+        allEccBytes.push(...block.eccBytes);
+    });
+
+    const hexString = allEccBytes
+        .map(byte => byte.toString(16).toUpperCase().padStart(2, '0'))
+        .join(' ');
+
+    navigator.clipboard.writeText(hexString).then(() => {
+        // Visual feedback
+        const originalText = button.textContent;
+        button.textContent = 'Copied!';
+        setTimeout(() => {
+            button.textContent = originalText;
+        }, 1500);
+    }).catch(err => {
+        alert('Failed to copy to clipboard: ' + err);
+    });
+}

@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Decoder - Step 2: Format Information</title>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <h1>QR Code Decoder - Step By Step</h1>
+
+    <div class="tabs">
+        <button class="tab-button active" onclick="switchTab(0)">Load Image</button>
+        <button class="tab-button" onclick="switchTab(1)">Decode</button>
+    </div>
+
+    <!-- Tab 1: Original Image -->
+    <div class="tab-content active" id="tab1">
+        <div class="side-panel">
+            <div class="controls">
+                <h3 style="margin-top: 0;">Controls</h3>
+                <div class="control-group">
+                    <label>Upload QR Code:</label>
+                    <input type="file" id="imageInput" accept="image/*">
+                </div>
+
+                <div class="control-group">
+                    <label>Version:</label>
+                    <select id="versionSelect">
+                        <!-- Versions 1-40 -->
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label>Quiet Zone (pixels):</label>
+                    <div class="border-controls">
+                        <div>
+                            <label>Top:</label>
+                            <input type="number" id="borderTop" min="0" value="0">
+                        </div>
+                        <div>
+                            <label>Bottom:</label>
+                            <input type="number" id="borderBottom" min="0" value="0">
+                        </div>
+                        <div>
+                            <label>Left:</label>
+                            <input type="number" id="borderLeft" min="0" value="0">
+                        </div>
+                        <div>
+                            <label>Right:</label>
+                            <input type="number" id="borderRight" min="0" value="0">
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h3>Format Information</h3>
+                <p><strong><span id="versionLabel">Version:</span></strong> <span id="versionInfo">-</span></p>
+                <p><strong>Error Correction:</strong> <span id="eccLevel">-</span></p>
+                <p><strong>Mask Pattern:</strong> <span id="maskPattern">-</span></p>
+            </div>
+
+            <div class="status">
+                <p><strong>Module Size:</strong> <span id="moduleSize">-</span> pixels</p>
+                <p><strong>Detected Borders:</strong> T:<span id="detectedTop">-</span> B:<span id="detectedBottom">-</span> L:<span id="detectedLeft">-</span> R:<span id="detectedRight">-</span></p>
+            </div>
+        </div>
+
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <h2>Original Image with Grid</h2>
+                <canvas id="canvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 2: Cleaned QR Code with Marking -->
+    <div class="tab-content" id="tab2">
+        <div class="side-panel">
+            <div class="marking-controls">
+                <div class="collapsible-header">
+                    <h3>Mark Components</h3>
+                    <button class="toggle-collapse" id="toggleMarking" onclick="toggleMarking()">Hide</button>
+                </div>
+                <div id="markingContent">
+                <button class="mark-button" id="markFinders" onclick="toggleMark('finders')">Mark Finders</button>
+                <button class="mark-button" id="markAlignment" onclick="toggleMark('alignment')" disabled>Mark Alignment</button>
+                <button class="mark-button" id="markFormat" onclick="toggleMark('format')">Mark Format Info</button>
+                <button class="mark-button" id="markTiming" onclick="toggleMark('timing')">Mark Timing</button>
+                <button class="mark-button" id="markDark" onclick="toggleMark('dark')">Mark Dark Module</button>
+                <button class="mark-button" id="markVersion" onclick="toggleMark('version')" disabled>Mark Version Info</button>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <div class="collapsible-header">
+                    <h3>Format Information</h3>
+                    <button class="toggle-collapse" id="toggleFormatInfo" onclick="toggleFormatInfo()">Hide</button>
+                </div>
+                <div id="formatInfoContent">
+                    <p><strong><span id="versionLabel2">Version:</span></strong> <span id="versionInfo2">-</span></p>
+                    <p><strong>Error Correction:</strong> <span id="eccLevel2">-</span></p>
+                    <p><strong>Mask Pattern:</strong> <span id="maskPattern2">-</span></p>
+                    <p><strong>Blocks:</strong> <span id="blockCount">-</span></p>
+                    <p><strong>Data Mode:</strong> <span id="dataMode">-</span></p>
+                    <p><strong>Message Size:</strong> <span id="messageSize">-</span></p>
+                </div>
+            </div>
+
+            <div class="marking-controls">
+                <div class="collapsible-header">
+                    <h3>Recover Data Blocks</h3>
+                    <button class="toggle-collapse" id="toggleRecovery" onclick="toggleRecovery()">Hide</button>
+                </div>
+                <div id="recoveryContent">
+                    <button class="mark-button" id="unmaskButton" onclick="unmaskQRCode()" disabled>Unmask Data</button>
+                    <div class="recovery-buttons">
+                        <button class="mark-button" id="recoverAllButton" onclick="recoverAllBitstream()" disabled>Recover All</button>
+                        <button class="mark-button" id="nextByteButton" onclick="recoverNextByte()" disabled>Next Codeword</button>
+                    </div>
+                    <button class="mark-button" id="deinterleaveButton" onclick="deinterleaveData()" disabled>De-interleave Data</button>
+                    <button class="mark-button" id="decodeModeButton" onclick="decodeMode()" disabled>Decode Mode</button>
+                    <button class="mark-button" id="decodeSizeButton" onclick="decodeSize()" disabled>Decode Size</button>
+                </div>
+            </div>
+
+            <div class="marking-controls">
+                <div class="collapsible-header">
+                    <h3>Error Correction</h3>
+                    <button class="toggle-collapse" id="toggleErrorCorrection" onclick="toggleErrorCorrection()">Hide</button>
+                </div>
+                <div id="errorCorrectionContent">
+                    <button class="mark-button" id="calculateSyndromesButton" onclick="calculateSyndromes()" disabled>Calculate Syndromes</button>
+                    <button class="mark-button" id="findErrorLocationsButton" onclick="findErrorLocations()" disabled>Find Error Locations</button>
+                    <button class="mark-button" id="calculateErrorValuesButton" onclick="calculateErrorValues()" disabled>Calculate Error Values</button>
+                    <button class="mark-button" id="applyCorrectionsButton" onclick="applyCorrections()" disabled>Apply Corrections</button>
+                    <button class="mark-button" id="decodeMessageButton" onclick="decodeMessage()" disabled>Decode Message</button>
+                    <div id="decodedMessageBox" style="display: none; margin-top: 10px; padding: 10px; background: #e8f4f8; border-radius: 4px; border: 2px solid #4a9eff;">
+                        <p style="margin: 0 0 5px 0; font-weight: bold; color: #2c5aa0;">Decoded Message:</p>
+                        <div id="decodedMessageContent" style="font-family: monospace; font-size: 13px; word-wrap: break-word; white-space: pre-wrap;"></div>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <div class="collapsible-header">
+                    <h2>Cleaned QR Code</h2>
+                    <button class="toggle-collapse" id="toggleCleanCanvas" onclick="toggleCleanCanvas()">Hide</button>
+                </div>
+                <div id="cleanCanvasWrapper">
+                    <canvas id="cleanCanvas"></canvas>
+                </div>
+            </div>
+            <div class="status">
+                <div class="collapsible-header">
+                    <h3 style="margin: 0;">Bitstream Recovery</h3>
+                    <button class="toggle-collapse" id="toggleBitstream" onclick="toggleBitstreamPanel()">Hide</button>
+                </div>
+                <div id="bitstreamPanel">
+                    <div id="bitstreamLegend" class="bitstream-legend" style="display: none;">
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #E3F2FD; border-color: #1976D2;"></div>
+                            <span>Block 1</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #E8F5E9; border-color: #388E3C;"></div>
+                            <span>Block 2</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #FFF9C4; border-color: #F9A825;"></div>
+                            <span>Block 3</span>
+                        </div>
+                        <div class="legend-item">
+                            <div class="legend-color" style="background: #FCE4EC; border-color: #C2185B;"></div>
+                            <span>Block 4</span>
+                        </div>
+                    </div>
+                    <div id="codewordDisplay" class="codeword-container"></div>
+                </div>
+            </div>
+            <div class="status">
+                <div class="collapsible-header">
+                    <h3 style="margin: 0;">Recovered Blocks in hex</h3>
+                    <button class="toggle-collapse" id="toggleBlocks" onclick="toggleBlocksPanel()">Hide</button>
+                </div>
+                <div style="display: flex; gap: 8px; margin: 10px 0;">
+                    <button class="mark-button" onclick="copyDataToClipboard(this)" title="Copy all data codewords as space-delimited hex">Copy Data</button>
+                    <button class="mark-button" onclick="copyEccToClipboard(this)" title="Copy all ECC codewords as space-delimited hex">Copy ECC</button>
+                </div>
+                <div id="blocksPanel">
+                    <div id="blockDisplay" style="width: 100%; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 11px;"></div>
+                    <div class="ec-status" id="ecStatus" style="display: none;">
+                        <p><strong>Error Correction Status:</strong></p>
+                        <div id="ecStatusContent"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script src="qr-utils.js"></script>
+    <script src="decoder.js"></script>
+</body>
+</html>

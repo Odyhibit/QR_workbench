@@ -1,0 +1,300 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>QR Code Encoder - Step By Step</title>
+    <link rel="stylesheet" href="styles.css">
+    <style>
+        .back-link {
+            display: inline-block;
+            margin-bottom: 20px;
+            color: #4a9eff;
+            text-decoration: none;
+        }
+
+        .back-link:hover {
+            text-decoration: underline;
+        }
+
+        .validated-input {
+            font-family: monospace;
+            font-size: 14px;
+            padding: 8px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            width: 100%;
+            box-sizing: border-box;
+            line-height: 1.5;
+            min-height: 100px;
+        }
+
+        .validated-input:focus {
+            outline: none;
+            border-color: #4a9eff;
+        }
+
+        .char-display {
+            font-family: monospace;
+            font-size: 14px;
+            padding: 10px;
+            border: 2px solid #ddd;
+            border-radius: 4px;
+            background: white;
+            min-height: 100px;
+            line-height: 1.5;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .char-valid {
+            color: black;
+        }
+
+        .char-invalid {
+            color: red;
+            font-weight: bold;
+        }
+
+        .validation-info {
+            margin-top: 10px;
+            padding: 10px;
+            background: #e8f4f8;
+            border-radius: 4px;
+            font-size: 13px;
+        }
+
+        .validation-info.warning {
+            background: #fff3cd;
+            border-left: 4px solid #ffc107;
+        }
+
+        .validation-info.success {
+            background: #d4edda;
+            border-left: 4px solid #28a745;
+        }
+
+        .charset-info {
+            margin-top: 5px;
+            font-size: 12px;
+            color: #666;
+            font-family: monospace;
+        }
+
+        .bitstream-section {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 4px;
+            border: 2px solid #ddd;
+        }
+
+        .bitstream-section h4 {
+            margin: 0 0 8px 0;
+            font-size: 14px;
+            color: #333;
+        }
+
+        .bitstream-section .bit-info {
+            font-size: 11px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+
+        .bitstream-field {
+            font-family: 'Courier New', monospace;
+            font-size: 13px;
+            padding: 8px;
+            border: 1px solid #ccc;
+            border-radius: 3px;
+            background: white;
+            width: 100%;
+            box-sizing: border-box;
+            word-wrap: break-word;
+            white-space: pre-wrap;
+        }
+
+        .bitstream-field:focus {
+            outline: none;
+            border-color: #4a9eff;
+            background: #f8fcff;
+        }
+
+        .bitstream-field[contenteditable="true"]:hover {
+            background: #fafafa;
+        }
+
+        .section-mode { border-color: #e91e63; background: #fce4ec; }
+        .section-count { border-color: #9c27b0; background: #f3e5f5; }
+        .section-data { border-color: #2196f3; background: #e3f2fd; }
+        .section-padding { border-color: #ff9800; background: #fff3e0; }
+        .section-ecc { border-color: #4caf50; background: #e8f5e9; }
+
+        .hex-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(35px, 1fr));
+            gap: 4px;
+            margin-top: 5px;
+        }
+
+        .hex-byte {
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            padding: 4px;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            text-align: center;
+            background: white;
+            cursor: pointer;
+        }
+
+        .hex-byte:hover {
+            background: #f0f0f0;
+        }
+
+        .hex-byte[contenteditable="true"]:focus {
+            outline: none;
+            border-color: #4a9eff;
+            background: #f8fcff;
+        }
+    </style>
+</head>
+<body>
+    <a href="index.html" class="back-link">&larr; Back to QR Workbench</a>
+
+    <h1>QR Code Encoder - Step By Step</h1>
+
+    <div class="tabs">
+        <button class="tab-button active" onclick="switchTab(0)">Data Entry</button>
+        <button class="tab-button" onclick="switchTab(1)" disabled>Encode</button>
+    </div>
+
+    <!-- Tab 1: Data Entry -->
+    <div class="tab-content active" id="tab1">
+        <div class="side-panel">
+            <div class="controls">
+                <h3 style="margin-top: 0;">Message Configuration</h3>
+
+                <div class="control-group">
+                    <label for="dataModeSelect">Data Mode:</label>
+                    <select id="dataModeSelect">
+                        <option value="numeric">Numeric</option>
+                        <option value="alphanumeric">Alphanumeric</option>
+                        <option value="byte" selected>Byte</option>
+                    </select>
+                    <div class="charset-info" id="charsetInfo">
+                        Allowed: Any characters (ISO-8859-1)
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label for="messageInput">Message:</label>
+                    <textarea id="messageInput" class="validated-input" placeholder="Enter your message here..."></textarea>
+                </div>
+
+                <div class="control-group">
+                    <label for="eccLevelSelect">Error Correction Level:</label>
+                    <select id="eccLevelSelect">
+                        <option value="L">L - Low (~7% correction)</option>
+                        <option value="M" selected>M - Medium (~15% correction)</option>
+                        <option value="Q">Q - Quartile (~25% correction)</option>
+                        <option value="H">H - High (~30% correction)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="versionSelect">Version:</label>
+                    <select id="versionSelect">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h3>Message Analysis</h3>
+                <p><strong>Length:</strong> <span id="messageLength">0</span> characters</p>
+                <p><strong>Valid Characters:</strong> <span id="validCount">0</span></p>
+                <p><strong>Invalid Characters:</strong> <span id="invalidCount">0</span></p>
+                <div id="validationMessage" class="validation-info success" style="display: none;">
+                    All characters are valid for the selected mode.
+                </div>
+            </div>
+
+            <div class="info-panel">
+                <h3>Capacity</h3>
+                <p><strong>Selected Version:</strong> <span id="selectedVersion">-</span></p>
+                <p><strong>Capacity:</strong> <span id="versionCapacity">-</span></p>
+                <p><strong>Usage:</strong> <span id="capacityUsage">-</span></p>
+                <div id="capacityMessage" class="validation-info" style="display: none;"></div>
+            </div>
+
+            <div class="controls">
+                <h3 style="margin-top: 0;">Encode</h3>
+                <button class="mark-button" id="encodeButton" onclick="encodeBitstream()">Encode Bitstream</button>
+                <p style="font-size: 12px; color: #666; margin-top: 10px;">This will generate the complete bitstream structure including mode, count, data, and padding.</p>
+            </div>
+        </div>
+
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <h2>Character Validation</h2>
+                <div id="charDisplay" class="char-display">
+                    Enter a message to see character validation...
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tab 2: Encode -->
+    <div class="tab-content" id="tab2">
+        <div class="side-panel">
+            <div class="info-panel">
+                <h3>Bitstream Structure</h3>
+                <p><strong>Total Data Codewords:</strong> <span id="totalDataCodewords">-</span></p>
+                <p><strong>Total ECC Codewords:</strong> <span id="totalEccCodewords">-</span></p>
+                <p><strong>Message Bits:</strong> <span id="messageBits">-</span></p>
+            </div>
+
+            <div class="controls">
+                <h3 style="margin-top: 0;">Actions</h3>
+                <button class="mark-button" id="encodeButton" onclick="encodeBitstream()">Encode Bitstream</button>
+                <button class="mark-button" id="calculateEccButton" onclick="calculateEcc()" disabled>Calculate ECC</button>
+
+                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
+                    <div class="control-group">
+                        <label for="maskPatternSelect">Mask Pattern:</label>
+                        <select id="maskPatternSelect">
+                            <option value="0">Pattern 0: (i+j) mod 2 = 0</option>
+                            <option value="1">Pattern 1: i mod 2 = 0</option>
+                            <option value="2">Pattern 2: j mod 3 = 0</option>
+                            <option value="3">Pattern 3: (i+j) mod 3 = 0</option>
+                            <option value="4">Pattern 4: ((i/2)+(j/3)) mod 2 = 0</option>
+                            <option value="5">Pattern 5: (i*j) mod 2 + (i*j) mod 3 = 0</option>
+                            <option value="6">Pattern 6: ((i*j) mod 2 + (i*j) mod 3) mod 2 = 0</option>
+                            <option value="7">Pattern 7: ((i+j) mod 2 + (i*j) mod 3) mod 2 = 0</option>
+                        </select>
+                    </div>
+                    <button class="mark-button" id="generateQrButton" onclick="generateQrCode()" disabled>Generate QR Code</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <h2>Generated QR Code</h2>
+                <canvas id="qrCanvas" width="600" height="600" style="border: 1px solid #ddd; background: white; display: none;"></canvas>
+                <p id="qrPlaceholder" style="color: #999; padding: 20px;">QR code will appear here after generation...</p>
+            </div>
+
+            <div class="canvas-container" style="margin-top: 20px;">
+                <h2>Data Bitstream</h2>
+                <div id="bitstreamDisplay" style="font-family: monospace; font-size: 13px; line-height: 1.8;">
+                    <p style="color: #999;">Click "Encode Bitstream" to generate the QR code data structure...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="qr-utils.js"></script>
+    <script src="encoder.js"></script>
+</body>
+</html>
