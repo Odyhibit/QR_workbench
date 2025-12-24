@@ -1414,19 +1414,19 @@ function placeFunctionPatterns(matrix, version) {
 
     // Reserve version information areas (for version 7+)
     if (version >= 7) {
-        // Bottom-left version info area (3 cols x 6 rows)
+        // Top-right version info area (3 cols x 6 rows)
         for (let row = 0; row < 6; row++) {
             for (let col = 0; col < 3; col++) {
-                if (matrix[size - 11 + row][col] === null) {
-                    matrix[size - 11 + row][col] = false;
+                if (matrix[row][size - 11 + col] === null) {
+                    matrix[row][size - 11 + col] = false;
                 }
             }
         }
-        // Top-right version info area (6 cols x 3 rows)
+        // Bottom-left version info area (6 cols x 3 rows)
         for (let row = 0; row < 3; row++) {
             for (let col = 0; col < 6; col++) {
-                if (matrix[row][size - 11 + col] === null) {
-                    matrix[row][size - 11 + col] = false;
+                if (matrix[size - 11 + row][col] === null) {
+                    matrix[size - 11 + row][col] = false;
                 }
             }
         }
