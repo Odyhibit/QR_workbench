@@ -175,6 +175,11 @@
                 <h3 style="margin-top: 0;">Message Configuration</h3>
 
                 <div class="control-group">
+                    <label for="messageInput">Message:</label>
+                    <textarea id="messageInput" class="validated-input" placeholder="Enter your message here..."></textarea>
+                </div>
+
+                <div class="control-group">
                     <label for="dataModeSelect">Data Mode:</label>
                     <select id="dataModeSelect">
                         <option value="numeric">Numeric</option>
@@ -184,11 +189,6 @@
                     <div class="charset-info" id="charsetInfo">
                         Allowed: Any characters (ISO-8859-1)
                     </div>
-                </div>
-
-                <div class="control-group">
-                    <label for="messageInput">Message:</label>
-                    <textarea id="messageInput" class="validated-input" placeholder="Enter your message here..."></textarea>
                 </div>
 
                 <div class="control-group">
@@ -209,36 +209,34 @@
                 </div>
             </div>
 
-            <div class="info-panel">
-                <h3>Message Analysis</h3>
-                <p><strong>Length:</strong> <span id="messageLength">0</span> characters</p>
-                <p><strong>Valid Characters:</strong> <span id="validCount">0</span></p>
-                <p><strong>Invalid Characters:</strong> <span id="invalidCount">0</span></p>
-                <div id="validationMessage" class="validation-info success" style="display: none;">
-                    All characters are valid for the selected mode.
-                </div>
-            </div>
-
-            <div class="info-panel">
-                <h3>Capacity</h3>
-                <p><strong>Selected Version:</strong> <span id="selectedVersion">-</span></p>
-                <p><strong>Capacity:</strong> <span id="versionCapacity">-</span></p>
-                <p><strong>Usage:</strong> <span id="capacityUsage">-</span></p>
-                <div id="capacityMessage" class="validation-info" style="display: none;"></div>
-            </div>
-
             <div class="controls">
                 <h3 style="margin-top: 0;">Encode</h3>
                 <button class="mark-button" id="encodeButton" onclick="encodeBitstream()">Encode Bitstream</button>
                 <p style="font-size: 12px; color: #666; margin-top: 10px;">This will generate the complete bitstream structure including mode, count, data, and padding.</p>
             </div>
+
+            <div class="info-panel">
+                <h3>Message Analysis</h3>
+                <p><strong>Length:</strong> <span id="messageLength">0</span> characters</p>
+                <p><strong>Valid Characters:</strong> <span id="validCount">0</span></p>
+                <p><strong>Invalid Characters:</strong> <span id="invalidCount">0</span></p>
+                <p><strong>Selected Version:</strong> <span id="selectedVersion">-</span></p>
+                <p><strong>Capacity:</strong> <span id="versionCapacity">-</span></p>
+                <p><strong>Usage:</strong> <span id="capacityUsage">-</span></p>
+                <div id="validationMessage" class="validation-info success" style="display: none;">
+                    All characters are valid for the selected mode.
+                </div>
+            </div>
+
+
+
         </div>
 
         <div class="canvas-area">
             <div class="canvas-container">
                 <h2>Character Validation</h2>
                 <div id="charDisplay" class="char-display">
-                    Enter a message to see character validation...
+                    View only, no editing in this panel...
                 </div>
             </div>
         </div>
@@ -256,7 +254,6 @@
 
             <div class="controls">
                 <h3 style="margin-top: 0;">Actions</h3>
-                <button class="mark-button" id="encodeButton" onclick="encodeBitstream()">Encode Bitstream</button>
                 <button class="mark-button" id="calculateEccButton" onclick="calculateEcc()" disabled>Calculate ECC</button>
 
                 <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
@@ -279,7 +276,7 @@
         </div>
 
         <div class="canvas-area">
-            <div class="canvas-container">
+            <div class="canvas-container" id="qrCodeContainer" style="display: none;">
                 <h2>Generated QR Code</h2>
                 <canvas id="qrCanvas" width="600" height="600" style="border: 1px solid #ddd; background: white; display: none;"></canvas>
                 <p id="qrPlaceholder" style="color: #999; padding: 20px;">QR code will appear here after generation...</p>

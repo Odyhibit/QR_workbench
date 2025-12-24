@@ -12,7 +12,6 @@ const validationMessage = document.getElementById('validationMessage');
 const selectedVersion = document.getElementById('selectedVersion');
 const versionCapacity = document.getElementById('versionCapacity');
 const capacityUsage = document.getElementById('capacityUsage');
-const capacityMessage = document.getElementById('capacityMessage');
 
 // Character sets for each mode
 const NUMERIC_CHARSET = '0123456789';
@@ -324,27 +323,9 @@ function updateCapacityDisplay() {
     // Calculate usage
     if (messageLen === 0) {
         capacityUsage.textContent = '0%';
-        capacityMessage.style.display = 'none';
     } else {
         const usagePercent = Math.round((messageLen / capacity) * 100);
         capacityUsage.textContent = `${messageLen} / ${capacity} (${usagePercent}%)`;
-
-        // Show capacity message
-        if (messageLen > capacity) {
-            capacityMessage.textContent = `Message is too long for this version. Minimum version needed: ${getMinimumVersion(messageLen, currentEccLevel, currentMode)}`;
-            capacityMessage.className = 'validation-info warning';
-            capacityMessage.style.display = 'block';
-        } else if (usagePercent < 50) {
-            capacityMessage.textContent = 'Version has significant excess capacity. Consider using a smaller version.';
-            capacityMessage.className = 'validation-info';
-            capacityMessage.style.background = '#e8f4f8';
-            capacityMessage.style.borderLeft = '4px solid #4a9eff';
-            capacityMessage.style.display = 'block';
-        } else {
-            capacityMessage.textContent = 'Version capacity is appropriate for message length.';
-            capacityMessage.className = 'validation-info success';
-            capacityMessage.style.display = 'block';
-        }
     }
 }
 
@@ -944,14 +925,29 @@ function displayBitstream(bitstream) {
         </div>
     `;
 
-    // Padding section (terminator + byte padding + pad bytes)
-    const paddingBits = bitstream.terminator + bitstream.bytePadding;
+    // Terminator section
     html += `
         <div class="bitstream-section section-padding">
-            <h4>4. Padding</h4>
-            <div class="bit-info">Terminator (${bitstream.terminator.length} bits) + Byte alignment (${bitstream.bytePadding.length} bits)</div>
-            <div class="bitstream-field" contenteditable="true" data-section="padding-bits" spellcheck="false">${paddingBits}</div>
-            <div class="bit-info" style="margin-top: 10px;">Pad Bytes (${bitstream.padBytes.length} bytes) - Pattern: 0xEC 0x11</div>
+            <h4>4. Terminator</h4>
+            <div class="bit-info">${bitstream.terminator.length} bits - Signals end of message (up to 4 zeros)</div>
+            <div class="bitstream-field" contenteditable="true" data-section="terminator" spellcheck="false">${bitstream.terminator}</div>
+        </div>
+    `;
+
+    // Byte alignment padding section
+    html += `
+        <div class="bitstream-section section-mode">
+            <h4>5. Byte Alignment Padding</h4>
+            <div class="bit-info">${bitstream.bytePadding.length} bits - Pads to byte boundary</div>
+            <div class="bitstream-field" contenteditable="true" data-section="byte-padding" spellcheck="false">${bitstream.bytePadding}</div>
+        </div>
+    `;
+
+    // Pad bytes section
+    html += `
+        <div class="bitstream-section section-count">
+            <h4>6. Pad Bytes</h4>
+            <div class="bit-info">${bitstream.padBytes.length} bytes - Fills remaining capacity (Pattern: 0xEC 0x11)</div>
             <div class="hex-grid">
     `;
 
@@ -964,10 +960,10 @@ function displayBitstream(bitstream) {
         </div>
     `;
 
-    // ECC section (placeholder for now)
+    // ECC section (placeholder for now) - using neutral grey
     html += `
-        <div class="bitstream-section section-ecc">
-            <h4>5. Error Correction Codewords (ECC)</h4>
+        <div class="bitstream-section" style="border-color: #999; background: #f5f5f5;">
+            <h4>7. Error Correction Codewords (ECC)</h4>
             <div class="bit-info">Click "Calculate ECC" to generate error correction bytes</div>
             <div id="eccDisplay" class="hex-grid">
                 <p style="color: #999; margin: 10px 0;">ECC not yet calculated...</p>
@@ -1025,9 +1021,9 @@ function splitIntoBlocks(dataBytes) {
     const blocks = [];
     let offset = 0;
 
-    // Group 1 blocks (standard size)
-    const numBlocksGroup1 = blockInfo.numBlocksInGroup2 > 0 ?
-        (blockInfo.numBlocks - blockInfo.numBlocksInGroup2) : blockInfo.numBlocks;
+    // Group 1 blocks (shorter blocks)
+    // Note: blockInfo.numBlocks already represents only Group 1 blocks
+    const numBlocksGroup1 = blockInfo.numBlocks;
 
     for (let i = 0; i < numBlocksGroup1; i++) {
         const blockData = dataBytes.slice(offset, offset + blockInfo.dataCodewordsInGroup1);
@@ -1064,22 +1060,22 @@ function calculateEcc() {
         return;
     }
 
+    // Read any edited values first
+    let dataBytes = encodedBitstream.dataBytes;
+    if (encodedBitstream.blocks) {
+        // If blocks already exist, read edited values
+        const edited = readAllEditedValues();
+        dataBytes = edited.dataBytes;
+    }
+
     // Split data into blocks
-    const blocks = splitIntoBlocks(encodedBitstream.dataBytes);
+    const blocks = splitIntoBlocks(dataBytes);
 
     // Calculate ECC for each block
     const encoder = new ReedSolomonEncoder();
-    blocks.forEach(block => {
-        // Compute ECC on the data bytes (without padding)
+    blocks.forEach((block, index) => {
+        // Compute ECC on the data bytes
         block.ecc = encoder.encode(block.data, block.eccCount);
-
-        // For short blocks, add a padding 0 byte AFTER ECC calculation
-        // This padding byte goes between data and ECC for interleaving purposes
-        // but is NOT part of the ECC calculation
-        if (block.isShort) {
-            // Insert padding byte at end of data (before we add it to the combined array)
-            block.paddingByte = 0;
-        }
     });
 
     // Store blocks
@@ -1125,9 +1121,105 @@ function displayEcc(blocks) {
     addBlockStructureDisplay(blocks);
 }
 
+// Read all edited values from contenteditable fields
+function readAllEditedValues() {
+    // If no blocks exist yet, return the original data
+    if (!encodedBitstream || !encodedBitstream.blocks) {
+        return { dataBytes: [], blocks: [] };
+    }
+
+    // Read bitstream sections
+    const modeElem = document.querySelector('[data-section="mode"]');
+    const countElem = document.querySelector('[data-section="count"]');
+    const dataElem = document.querySelector('[data-section="data"]');
+    const terminatorElem = document.querySelector('[data-section="terminator"]');
+    const bytePaddingElem = document.querySelector('[data-section="byte-padding"]');
+
+    // Helper function to clean bit strings (remove all non-01 characters)
+    const cleanBitString = (str) => str.replace(/[^01]/g, '');
+
+    if (modeElem) encodedBitstream.modeIndicator = cleanBitString(modeElem.textContent);
+    if (countElem) encodedBitstream.charCount = cleanBitString(countElem.textContent);
+    if (dataElem) encodedBitstream.messageData = cleanBitString(dataElem.textContent);
+    if (terminatorElem) encodedBitstream.terminator = cleanBitString(terminatorElem.textContent);
+    if (bytePaddingElem) encodedBitstream.bytePadding = cleanBitString(bytePaddingElem.textContent);
+
+    // Read pad bytes
+    document.querySelectorAll('[data-section="pad-byte"]').forEach(elem => {
+        const index = parseInt(elem.getAttribute('data-index'));
+        const hexValue = elem.textContent.trim();
+        try {
+            encodedBitstream.padBytes[index] = parseInt(hexValue, 16);
+        } catch (e) {
+            console.warn('Invalid hex value in pad byte:', hexValue);
+        }
+    });
+
+    // Reconstruct data bytes from bitstream
+    const dataBits = encodedBitstream.modeIndicator +
+                     encodedBitstream.charCount +
+                     encodedBitstream.messageData +
+                     encodedBitstream.terminator +
+                     encodedBitstream.bytePadding;
+
+    const dataBytes = [];
+    for (let i = 0; i < dataBits.length; i += 8) {
+        const bitString = dataBits.substring(i, i + 8);
+        if (bitString.length === 8) {
+            const byte = parseInt(bitString, 2);
+            if (!isNaN(byte)) {
+                dataBytes.push(byte);
+            } else {
+                dataBytes.push(0); // Use 0 as fallback
+            }
+        }
+    }
+
+    encodedBitstream.padBytes.forEach(b => {
+        dataBytes.push(isNaN(b) ? 0 : b);
+    });
+
+    // Update the existing blocks with new data from edited values
+    const blocks = splitIntoBlocks(dataBytes);
+
+    // Copy over ECC from old blocks and read edited ECC values
+    encodedBitstream.blocks.forEach((oldBlock, blockIndex) => {
+        if (blocks[blockIndex]) {
+            // Copy ECC array (create a new copy to avoid reference issues)
+            if (oldBlock.ecc && Array.isArray(oldBlock.ecc)) {
+                blocks[blockIndex].ecc = [...oldBlock.ecc];
+            } else {
+                blocks[blockIndex].ecc = [];
+            }
+        }
+    });
+
+    // Read edited ECC bytes from UI
+    document.querySelectorAll('[data-section="ecc-byte"]').forEach(elem => {
+        const blockIndex = parseInt(elem.getAttribute('data-block'));
+        const byteIndex = parseInt(elem.getAttribute('data-index'));
+        const hexValue = elem.textContent.trim();
+        try {
+            if (blocks[blockIndex] && blocks[blockIndex].ecc) {
+                blocks[blockIndex].ecc[byteIndex] = parseInt(hexValue, 16);
+            }
+        } catch (e) {
+            console.warn('Invalid hex value in ECC:', hexValue);
+        }
+    });
+
+    return { dataBytes, blocks };
+}
+
 // Add non-editable block structure display
 function addBlockStructureDisplay(blocks) {
     const bitstreamDisplay = document.getElementById('bitstreamDisplay');
+
+    // Remove existing block structure display if it exists
+    const existingBlockDisplay = document.getElementById('blockStructureDisplay');
+    if (existingBlockDisplay) {
+        existingBlockDisplay.remove();
+    }
 
     // Color palette (same as above)
     const blockColors = [
@@ -1138,9 +1230,9 @@ function addBlockStructureDisplay(blocks) {
     ];
 
     let html = `
-        <div style="margin-top: 30px; padding-top: 20px; border-top: 3px solid #ddd;">
-            <h2>Block Structure (Non-Editable View)</h2>
-            <p style="color: #666; margin-bottom: 20px;">This shows how data is organized into blocks before interleaving. Each block contains its data codewords followed by its ECC codewords.</p>
+        <div id="blockStructureDisplay" style="margin-top: 30px; padding-top: 20px; border-top: 3px solid #ddd;">
+            <h2>Block Structure (Read-Only View)</h2>
+            <p style="color: #666; margin-bottom: 20px;">This shows the current data values (including any edits) organized into blocks before interleaving. Each block contains its data codewords followed by its ECC codewords.</p>
     `;
 
     blocks.forEach((block, blockIndex) => {
@@ -1163,18 +1255,6 @@ function addBlockStructureDisplay(blocks) {
                     </div>
                 </div>
         `;
-
-        // Show padding byte for short blocks
-        if (block.isShort) {
-            html += `
-                <div style="margin-bottom: 15px;">
-                    <h4 style="margin: 0 0 5px 0; font-size: 13px;">Padding Byte (not in ECC calculation)</h4>
-                    <div class="hex-grid" style="background: white; padding: 8px; border-radius: 3px;">
-                        <div class="hex-byte" style="cursor: default; background: #fff3cd;">00</div>
-                    </div>
-                </div>
-            `;
-        }
 
         html += `
                 <div>
@@ -1201,78 +1281,28 @@ function addBlockStructureDisplay(blocks) {
 
 // ========== QR CODE GENERATION ==========
 
-// Read edited hex values from contenteditable fields
-function readEditedValues() {
-    const blocks = encodedBitstream.blocks;
-
-    // Read edited pad bytes
-    document.querySelectorAll('[data-section="pad-byte"]').forEach(elem => {
-        const index = parseInt(elem.getAttribute('data-index'));
-        const hexValue = elem.textContent.trim();
-        try {
-            encodedBitstream.padBytes[index] = parseInt(hexValue, 16);
-        } catch (e) {
-            console.warn('Invalid hex value in pad byte:', hexValue);
-        }
-    });
-
-    // Reconstruct data bytes (mode + count + message + padding + pad bytes)
-    const dataBits = encodedBitstream.modeIndicator +
-                     encodedBitstream.charCount +
-                     encodedBitstream.messageData +
-                     encodedBitstream.terminator +
-                     encodedBitstream.bytePadding;
-
-    const dataBytes = [];
-    for (let i = 0; i < dataBits.length; i += 8) {
-        dataBytes.push(parseInt(dataBits.substring(i, i + 8), 2));
-    }
-    encodedBitstream.padBytes.forEach(b => dataBytes.push(b));
-
-    // Read edited ECC bytes
-    document.querySelectorAll('[data-section="ecc-byte"]').forEach(elem => {
-        const blockIndex = parseInt(elem.getAttribute('data-block'));
-        const byteIndex = parseInt(elem.getAttribute('data-index'));
-        const hexValue = elem.textContent.trim();
-        try {
-            blocks[blockIndex].ecc[byteIndex] = parseInt(hexValue, 16);
-        } catch (e) {
-            console.warn('Invalid hex value in ECC:', hexValue);
-        }
-    });
-
-    return { dataBytes, blocks };
-}
-
-// Interleave blocks (following qrcodegen's approach with short/long blocks)
+// Interleave blocks (properly interleave data then ECC)
 function interleaveBlocks(blocks) {
     const interleaved = [];
 
-    // Create combined blocks: [data, padding (if short), ecc]
-    const combinedBlocks = blocks.map(block => {
-        const combined = [...block.data];
-        if (block.isShort) {
-            combined.push(block.paddingByte); // Add padding byte
-        }
-        return combined.concat(block.ecc);
-    });
+    // Find the maximum data and ECC lengths
+    const maxDataLen = Math.max(...blocks.map(b => b.data.length));
+    const maxEccLen = Math.max(...blocks.map(b => b.ecc.length));
 
-    // Find the maximum block length
-    const maxBlockLen = Math.max(...combinedBlocks.map(b => b.length));
-
-    // The padding byte position in short blocks
-    const shortBlockDataLen = blocks.find(b => b.isShort)?.data.length || 0;
-
-    // Interleave all bytes
-    for (let i = 0; i < maxBlockLen; i++) {
-        combinedBlocks.forEach((block, j) => {
-            // Skip the padding byte position in short blocks
-            // The padding position is at index shortBlockDataLen in short blocks
-            if (blocks[j].isShort && i === shortBlockDataLen) {
-                return; // Skip padding byte
+    // Interleave data bytes
+    for (let i = 0; i < maxDataLen; i++) {
+        blocks.forEach(block => {
+            if (i < block.data.length) {
+                interleaved.push(block.data[i]);
             }
-            if (i < block.length) {
-                interleaved.push(block[i]);
+        });
+    }
+
+    // Interleave ECC bytes
+    for (let i = 0; i < maxEccLen; i++) {
+        blocks.forEach(block => {
+            if (i < block.ecc.length) {
+                interleaved.push(block.ecc[i]);
             }
         });
     }
@@ -1381,6 +1411,26 @@ function placeFunctionPatterns(matrix, version) {
     }
     // Also reserve the (8,8) position which is part of format info
     if (matrix[8][8] === null) matrix[8][8] = false;
+
+    // Reserve version information areas (for version 7+)
+    if (version >= 7) {
+        // Bottom-left version info area (3 cols x 6 rows)
+        for (let row = 0; row < 6; row++) {
+            for (let col = 0; col < 3; col++) {
+                if (matrix[size - 11 + row][col] === null) {
+                    matrix[size - 11 + row][col] = false;
+                }
+            }
+        }
+        // Top-right version info area (6 cols x 3 rows)
+        for (let row = 0; row < 3; row++) {
+            for (let col = 0; col < 6; col++) {
+                if (matrix[row][size - 11 + col] === null) {
+                    matrix[row][size - 11 + col] = false;
+                }
+            }
+        }
+    }
 }
 
 // Place data bits on matrix
@@ -1465,6 +1515,55 @@ function calculateFormatBits(eccLevel, maskPattern) {
     return bits;
 }
 
+// Calculate version information bits (for version 7+)
+function calculateVersionBits(version) {
+    if (version < 7) return 0;
+
+    // BCH error correction for version info
+    // Version is 6 bits, BCH adds 12 bits = 18 bits total
+    let bch = version << 12;
+    let g = 0b1111100100101; // Generator polynomial for version info
+
+    for (let i = 0; i < 6; i++) {
+        if ((bch >> (17 - i)) & 1) {
+            bch ^= g << (5 - i);
+        }
+    }
+
+    let bits = (version << 12) | bch;
+    return bits;
+}
+
+// Place version information (for version 7+)
+function placeVersionInfo(matrix, version) {
+    if (version < 7) return;
+
+    const size = matrix.length;
+    const versionBits = calculateVersionBits(version);
+
+    // Version info is 18 bits total, placed in two locations
+    // Bottom-left: 3 columns x 6 rows (rows: size-11 to size-9, cols: 0-5)
+    // Top-right: 6 columns x 3 rows (rows: 0-5, cols: size-11 to size-9)
+
+    // Place in bottom-left area (reading column by column, bottom to top)
+    for (let col = 0; col < 6; col++) {
+        for (let row = 0; row < 3; row++) {
+            const bitIndex = col * 3 + row;
+            const bit = (versionBits >> bitIndex) & 1;
+            matrix[size - 11 + row][col] = bit === 1;
+        }
+    }
+
+    // Place in top-right area (reading row by row, right to left)
+    for (let row = 0; row < 6; row++) {
+        for (let col = 0; col < 3; col++) {
+            const bitIndex = row * 3 + col;
+            const bit = (versionBits >> bitIndex) & 1;
+            matrix[row][size - 11 + col] = bit === 1;
+        }
+    }
+}
+
 // Place format information
 function placeFormatInfo(matrix, eccLevel, maskPattern, version) {
     const size = matrix.length;
@@ -1512,6 +1611,63 @@ function placeFormatInfo(matrix, eccLevel, maskPattern, version) {
     matrix[darkRow][darkCol] = true;
 }
 
+// Display interleaved bytes for debugging
+function displayInterleavedBytes(interleaved, blocks) {
+    // Find or create the display container
+    let container = document.getElementById('interleavedDisplay');
+    if (!container) {
+        // Create it if it doesn't exist
+        const bitstreamDisplay = document.getElementById('bitstreamDisplay');
+        const newContainer = document.createElement('div');
+        newContainer.id = 'interleavedDisplay';
+        newContainer.style.marginTop = '30px';
+        newContainer.style.paddingTop = '20px';
+        newContainer.style.borderTop = '3px solid #ddd';
+        bitstreamDisplay.parentNode.appendChild(newContainer);
+        container = newContainer;
+    }
+
+    // Calculate where data ends and ECC begins
+    const totalDataBytes = blocks.reduce((sum, block) => sum + block.data.length, 0);
+    const totalEccBytes = blocks.reduce((sum, block) => sum + block.ecc.length, 0);
+
+    let html = `
+        <h2>Interleaved Byte Stream (Debug)</h2>
+        <p style="color: #666; margin-bottom: 20px;">
+            Total: ${interleaved.length} bytes
+            (${totalDataBytes} data + ${totalEccBytes} ECC)
+        </p>
+        <div style="background: #f5f5f5; padding: 15px; border-radius: 4px;">
+            <h3 style="margin-top: 0; font-size: 14px;">Data Bytes (${totalDataBytes} bytes)</h3>
+            <div class="hex-grid" style="margin-bottom: 20px;">
+    `;
+
+    // Display data bytes
+    for (let i = 0; i < totalDataBytes; i++) {
+        const byte = interleaved[i];
+        html += `<div class="hex-byte" style="cursor: default; background: #e3f2fd;">${byte.toString(16).toUpperCase().padStart(2, '0')}</div>`;
+    }
+
+    html += `
+            </div>
+            <h3 style="font-size: 14px;">ECC Bytes (${totalEccBytes} bytes)</h3>
+            <div class="hex-grid">
+    `;
+
+    // Display ECC bytes
+    for (let i = totalDataBytes; i < interleaved.length; i++) {
+        const byte = interleaved[i];
+        html += `<div class="hex-byte" style="cursor: default; background: #e8f5e9;">${byte.toString(16).toUpperCase().padStart(2, '0')}</div>`;
+    }
+
+    html += `
+            </div>
+        </div>
+    `;
+
+    container.innerHTML = html;
+}
+
 // Render QR code to canvas
 function renderQrCode(matrix) {
     const canvas = document.getElementById('qrCanvas');
@@ -1553,10 +1709,13 @@ function generateQrCode() {
     }
 
     // Read any edited values
-    const { blocks } = readEditedValues();
+    const { blocks } = readAllEditedValues();
 
     // Interleave blocks
     const interleaved = interleaveBlocks(blocks);
+
+    // Display interleaved bytes for debugging
+    displayInterleavedBytes(interleaved, blocks);
 
     // Create QR matrix
     const size = getQrSize(currentVersion);
@@ -1576,6 +1735,12 @@ function generateQrCode() {
 
     // Place format information (must be after mask since it encodes the mask pattern)
     placeFormatInfo(matrix, currentEccLevel, maskPattern, currentVersion);
+
+    // Place version information (for version 7+)
+    placeVersionInfo(matrix, currentVersion);
+
+    // Show the QR code container
+    document.getElementById('qrCodeContainer').style.display = 'block';
 
     // Render to canvas
     renderQrCode(matrix);

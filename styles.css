@@ -419,6 +419,12 @@ canvas {
     color: #880E4F;
 }
 
+.codeword-box.block-4 {
+    background: #F3E5F5;
+    border-color: #9C27B0;
+    color: #4A148C;
+}
+
 /* Match byte-box colors to codeword blocks for visual linkage */
 .byte-box.block-0 {
     background: #E3F2FD;
@@ -442,6 +448,12 @@ canvas {
     background: #FCE4EC;
     border-color: #C2185B;
     color: #880E4F;
+}
+
+.byte-box.block-4 {
+    background: #F3E5F5;
+    border-color: #9C27B0;
+    color: #4A148C;
 }
 
 .codeword-box .block-label {

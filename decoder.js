@@ -1984,7 +1984,7 @@ function reorganizeBitstreamDisplay(blocks) {
         // Add data codewords for this block
         block.data.forEach((codeword) => {
             const box = document.createElement('div');
-            box.className = `codeword-box block-${blockIdx % 4}`;
+            box.className = `codeword-box block-${blockIdx % 5}`;
             box.textContent = codeword;
 
             //const label = document.createElement('span');
@@ -1998,7 +1998,7 @@ function reorganizeBitstreamDisplay(blocks) {
         // Add EC codewords for this block
         block.ec.forEach((codeword) => {
             const box = document.createElement('div');
-            box.className = `codeword-box block-${blockIdx % 4}`;
+            box.className = `codeword-box block-${blockIdx % 5}`;
             box.textContent = codeword;
 
             const label = document.createElement('span');
@@ -2491,7 +2491,7 @@ function displayBlocksAsHex() {
             const hexValue = byte.toString(16).toUpperCase().padStart(2, '0');
             let classes = 'byte-box';
             const dataId = `block${idx}-data${i}`;
-            html += `<span class="${classes} block-${idx % 4}" id="${dataId}">${hexValue}</span>`;
+            html += `<span class="${classes} block-${idx % 5}" id="${dataId}">${hexValue}</span>`;
         });
         html += `</div></div>`;
 
@@ -2502,7 +2502,7 @@ function displayBlocksAsHex() {
         block.eccBytes.forEach((byte, i) => {
             const hexValue = byte.toString(16).toUpperCase().padStart(2, '0');
             const eccId = `block${idx}-ecc${i}`;
-            html += `<span class="byte-box block-${idx % 4}" id="${eccId}">${hexValue}</span>`;
+            html += `<span class="byte-box block-${idx % 5}" id="${eccId}">${hexValue}</span>`;
         });
         html += `</div></div>`;
 
