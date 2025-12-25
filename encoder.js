@@ -1053,6 +1053,93 @@ function splitIntoBlocks(dataBytes) {
     return blocks;
 }
 
+// Apply custom padding and ECC data
+function applyCustomData(button) {
+    if (!encodedBitstream) {
+        alert('Please encode bitstream first!');
+        return;
+    }
+
+    const paddingInput = document.getElementById('paddingInput').value;
+    const eccInput = document.getElementById('eccInput').value;
+
+    // Convert ASCII to hex bytes
+    const paddingBytes = [];
+    for (let i = 0; i < paddingInput.length; i++) {
+        paddingBytes.push(paddingInput.charCodeAt(i));
+    }
+
+    const eccBytes = [];
+    for (let i = 0; i < eccInput.length; i++) {
+        eccBytes.push(eccInput.charCodeAt(i));
+    }
+
+    // Validate padding length
+    if (paddingBytes.length > encodedBitstream.padBytes.length) {
+        alert(`Padding text is too long! Maximum ${encodedBitstream.padBytes.length} characters allowed.`);
+        return;
+    }
+
+    // Apply padding override
+    if (paddingBytes.length > 0) {
+        for (let i = 0; i < paddingBytes.length; i++) {
+            encodedBitstream.padBytes[i] = paddingBytes[i];
+        }
+        // Update the display
+        const padByteElements = document.querySelectorAll('[data-section="pad-byte"]');
+        padByteElements.forEach((elem, i) => {
+            elem.textContent = encodedBitstream.padBytes[i].toString(16).toUpperCase().padStart(2, '0');
+        });
+    }
+
+    // Apply ECC override if blocks exist
+    if (encodedBitstream.blocks && eccBytes.length > 0) {
+        const blocks = encodedBitstream.blocks;
+        const eccBytesPerBlock = blocks[0].eccCount;
+
+        // Validate ECC length: must be <= (total ECC / 2) - 1
+        const totalEccBytes = blocks.reduce((sum, block) => sum + block.eccCount, 0);
+        const maxEccInput = Math.floor(totalEccBytes / 2) - 1;
+
+        if (eccBytes.length > maxEccInput) {
+            alert(`ECC text is too long! Maximum ${maxEccInput} characters allowed (half of ${totalEccBytes} ECC bytes minus one).`);
+            return;
+        }
+
+        // Distribute ECC bytes evenly across all blocks
+        // Calculate base bytes per block and how many blocks get an extra byte
+        const baseBytes = Math.floor(eccBytes.length / blocks.length);
+        const extraBytes = eccBytes.length % blocks.length;
+        let byteIndex = 0;
+
+        for (let blockIndex = 0; blockIndex < blocks.length && byteIndex < eccBytes.length; blockIndex++) {
+            // First 'extraBytes' blocks get one extra byte
+            const bytesToTake = baseBytes + (blockIndex < extraBytes ? 1 : 0);
+            for (let i = 0; i < bytesToTake; i++) {
+                blocks[blockIndex].ecc[i] = eccBytes[byteIndex];
+                byteIndex++;
+            }
+        }
+
+        // Update the ECC display
+        displayEcc(blocks);
+    } else if (eccBytes.length > 0) {
+        alert('Please calculate ECC first before applying ECC override!');
+        return;
+    }
+
+    if (paddingBytes.length > 0 || eccBytes.length > 0) {
+        // Change button text to indicate success
+        if (button) {
+            const originalText = button.textContent;
+            button.textContent = 'Applied';
+            setTimeout(() => {
+                button.textContent = originalText;
+            }, 2000);
+        }
+    }
+}
+
 // Calculate ECC for all blocks
 function calculateEcc() {
     if (!encodedBitstream) {
