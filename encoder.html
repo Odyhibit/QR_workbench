@@ -253,6 +253,25 @@
             </div>
 
             <div class="controls">
+                <h3 style="margin-top: 0;">Custom Data Insertion</h3>
+                <div class="control-group">
+                    <label for="paddingInput">Padding Override (ASCII):</label>
+                    <input type="text" id="paddingInput" placeholder="Text to insert in padding">
+                    <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                        Text will be converted to hex and inserted from the beginning of padding bytes
+                    </div>
+                </div>
+                <div class="control-group">
+                    <label for="eccInput">ECC Override (ASCII):</label>
+                    <input type="text" id="eccInput" placeholder="Text to insert in ECC">
+                    <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                        Text will be distributed across all ECC blocks
+                    </div>
+                </div>
+                <button class="mark-button" onclick="applyCustomData(this)">Apply Custom Data</button>
+            </div>
+
+            <div class="controls">
                 <h3 style="margin-top: 0;">Actions</h3>
                 <button class="mark-button" id="calculateEccButton" onclick="onCalculateEccClick()" disabled>Calculate ECC</button>
 
