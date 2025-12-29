@@ -314,8 +314,8 @@ canvas {
 
 .byte-box .error-value {
     position: absolute;
-    top: -18px;
-    left: 50%;
+    top: -1px;
+    left: 82%;
     transform: translateX(-50%);
     font-size: 9px;
     color: #cc0000;

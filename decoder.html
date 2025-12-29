@@ -138,11 +138,12 @@
                     <button class="mark-button" id="calculateErrorValuesButton" onclick="calculateErrorValues()" disabled>Calculate Error Values</button>
                     <button class="mark-button" id="applyCorrectionsButton" onclick="applyCorrections()" disabled>Apply Corrections</button>
                     <button class="mark-button" id="decodeMessageButton" onclick="decodeMessage()" disabled>Decode Message</button>
-                    <div id="decodedMessageBox" style="display: none; margin-top: 10px; padding: 10px; background: #e8f4f8; border-radius: 4px; border: 2px solid #4a9eff;">
-                        <p style="margin: 0 0 5px 0; font-weight: bold; color: #2c5aa0;">Decoded Message:</p>
-                        <div id="decodedMessageContent" style="font-family: monospace; font-size: 13px; word-wrap: break-word; white-space: pre-wrap;"></div>
-                    </div>
                 </div>
+            </div>
+
+            <div id="decodedMessageBox" style="display: none; margin-top: 10px; padding: 10px; background: #e8f4f8; border-radius: 4px; border: 2px solid #4a9eff;">
+                <p style="margin: 0 0 5px 0; font-weight: bold; color: #2c5aa0;">Decoded Message:</p>
+                <div id="decodedMessageContent" style="font-family: monospace; font-size: 13px; word-wrap: break-word; white-space: pre-wrap;"></div>
             </div>
 
         </div>
@@ -194,16 +195,24 @@
                     <button class="mark-button" onclick="copyEccToClipboard(this)" title="Copy all ECC codewords as space-delimited hex">Copy ECC</button>
                 </div>
                 <div id="blocksPanel">
-                    <div id="blockDisplay" style="width: 100%; max-height: 400px; overflow-y: auto; font-family: monospace; font-size: 11px;"></div>
-                    <div class="ec-status" id="ecStatus" style="display: none;">
-                        <p><strong>Error Correction Status:</strong></p>
-                        <div id="ecStatusContent"></div>
-                    </div>
+                    <div id="blockDisplay" style="width: 100%; font-family: monospace; font-size: 11px;"></div>
+                </div>
+            </div>
+            <div class="status">
+                <div class="ec-status" id="ecStatus" style="display: none;">
+                    <p><strong>Error Correction Status:</strong></p>
+                    <div id="ecStatusContent"></div>
                 </div>
             </div>
         </div>
     </div>
     <script src="qr-utils.js"></script>
+    <script src="qr-reed-solomon.js"></script>
+    <script src="qr-block-tables.js"></script>
+    <script src="decoder-extract.js"></script>
+    <script src="decoder-bitstream.js"></script>
+    <script src="decoder-error-correction.js"></script>
+    <script src="decoder-ui.js"></script>
     <script src="decoder.js"></script>
 </body>
 </html>

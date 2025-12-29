@@ -211,7 +211,7 @@
 
             <div class="controls">
                 <h3 style="margin-top: 0;">Encode</h3>
-                <button class="mark-button" id="encodeButton" onclick="encodeBitstream()">Encode Bitstream</button>
+                <button class="mark-button" id="encodeButton" onclick="onEncodeBitstreamClick()">Encode Bitstream</button>
                 <p style="font-size: 12px; color: #666; margin-top: 10px;">This will generate the complete bitstream structure including mode, count, data, and padding.</p>
             </div>
 
@@ -254,7 +254,7 @@
 
             <div class="controls">
                 <h3 style="margin-top: 0;">Actions</h3>
-                <button class="mark-button" id="calculateEccButton" onclick="calculateEcc()" disabled>Calculate ECC</button>
+                <button class="mark-button" id="calculateEccButton" onclick="onCalculateEccClick()" disabled>Calculate ECC</button>
 
                 <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
                     <div class="control-group">
@@ -270,7 +270,8 @@
                             <option value="7">Pattern 7: ((i+j) mod 2 + (i*j) mod 3) mod 2 = 0</option>
                         </select>
                     </div>
-                    <button class="mark-button" id="generateQrButton" onclick="generateQrCode()" disabled>Generate QR Code</button>
+                    <button class="mark-button" id="generateQrButton" onclick="onGenerateQrCodeClick()" disabled>Generate QR Code</button>
+                    <button class="mark-button" id="zeroPaddingButton" onclick="onZeroPaddingClick()" disabled>Zero Out Padding</button>
                 </div>
             </div>
         </div>
@@ -292,6 +293,10 @@
     </div>
 
     <script src="qr-utils.js"></script>
+    <script src="qr-reed-solomon.js"></script>
+    <script src="qr-block-tables.js"></script>
+    <script src="encoder-core.js"></script>
+    <script src="encoder-ui.js"></script>
     <script src="encoder.js"></script>
 </body>
 </html>
