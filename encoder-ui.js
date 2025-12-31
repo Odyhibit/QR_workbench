@@ -246,6 +246,58 @@ function switchTab(index) {
     });
 }
 
+// Toggle custom padding section
+let isCustomPaddingCollapsed = false;
+function toggleCustomPadding() {
+    isCustomPaddingCollapsed = !isCustomPaddingCollapsed;
+    const content = document.getElementById('customPaddingContent');
+    const toggle = document.getElementById('toggleCustomPadding');
+    if (isCustomPaddingCollapsed) {
+        content.style.display = 'none';
+        toggle.textContent = 'Show';
+    } else {
+        content.style.display = 'block';
+        toggle.textContent = 'Hide';
+    }
+}
+
+// Validate hex input (accepts space and comma delimiters)
+function validateHexInput(input) {
+    // Remove spaces and commas, check if remaining characters are valid hex
+    const cleaned = input.replace(/[\s,]/g, '');
+    // Valid if empty or all hex characters
+    return cleaned.length === 0 || /^[0-9A-Fa-f]*$/.test(cleaned);
+}
+
+// Parse custom padding hex (accepts space or comma delimiters)
+function parseCustomPaddingHex(input) {
+    // Remove all spaces and commas, then split into pairs
+    const cleaned = input.replace(/[\s,]/g, '').toUpperCase();
+    const bytes = [];
+
+    for (let i = 0; i < cleaned.length; i += 2) {
+        const hexByte = cleaned.substring(i, i + 2);
+        if (hexByte.length === 2) {
+            bytes.push(parseInt(hexByte, 16));
+        } else if (hexByte.length === 1) {
+            // Single character, treat as 0X
+            bytes.push(parseInt(hexByte, 16));
+        }
+    }
+
+    return bytes;
+}
+
+// Update padding byte count display
+function updatePaddingByteCount(encodedBitstream) {
+    const countElement = document.getElementById('paddingByteCount');
+    if (encodedBitstream && encodedBitstream.padBytes) {
+        countElement.textContent = `Padding bytes: ${encodedBitstream.padBytes.length}`;
+    } else {
+        countElement.textContent = 'Padding bytes: -';
+    }
+}
+
 // Display bitstream with editable components
 function displayBitstream(bitstream, currentMode, currentMessage) {
     const display = document.getElementById('bitstreamDisplay');
@@ -340,10 +392,14 @@ function displayBitstream(bitstream, currentMode, currentMessage) {
     document.getElementById('totalDataCodewords').textContent = bitstream.dataBytes.length;
     document.getElementById('messageBits').textContent = bitstream.messageBits;
 
-    // Enable ECC calculation button, disable others
+    // Update padding byte count
+    updatePaddingByteCount(bitstream);
+
+    // Enable ECC calculation button, custom padding buttons
     document.getElementById('calculateEccButton').disabled = false;
     document.getElementById('generateQrButton').disabled = true;
-    document.getElementById('zeroPaddingButton').disabled = true;
+    document.getElementById('zeroPaddingButton').disabled = false;
+    document.getElementById('applyCustomPaddingButton').disabled = false;
 }
 
 // Encode bitstream (called by button)

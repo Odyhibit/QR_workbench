@@ -37,6 +37,17 @@ function init() {
     versionSelect.addEventListener('change', onVersionChange);
     messageInput.addEventListener('input', onMessageInput);
 
+    // Custom padding hex input validation
+    const customPaddingInput = document.getElementById('customPaddingInput');
+    customPaddingInput.addEventListener('input', function() {
+        const isValid = validateHexInput(this.value);
+        if (isValid) {
+            this.style.outline = '';
+        } else {
+            this.style.outline = '2px solid red';
+        }
+    });
+
     // Initial state
     currentEccLevel = eccLevelSelect.value;
     updateCharsetInfo(currentMode);
@@ -107,9 +118,6 @@ function onCalculateEccClick() {
 
     // Update display
     displayEcc(blocks);
-
-    // Disable zero padding button until QR is generated
-    document.getElementById('zeroPaddingButton').disabled = true;
 }
 
 function onGenerateQrCodeClick() {
@@ -154,14 +162,11 @@ function onGenerateQrCodeClick() {
 
     // Render to canvas
     renderQrCode(matrix);
-
-    // Enable the zero padding button
-    document.getElementById('zeroPaddingButton').disabled = false;
 }
 
 function onZeroPaddingClick() {
-    if (!encodedBitstream || !encodedBitstream.blocks) {
-        alert('Please generate QR code first!');
+    if (!encodedBitstream) {
+        alert('Please encode bitstream first!');
         return;
     }
 
@@ -183,6 +188,93 @@ function onZeroPaddingClick() {
     displayEcc(blocks);
 
     // Regenerate QR code with the new data (don't read from contenteditable fields)
+    const interleaved = interleaveBlocks(blocks);
+    displayInterleavedBytes(interleaved, blocks);
+
+    const size = getQrSize(currentVersion);
+    const matrix = createMatrix(size);
+    placeFunctionPatterns(matrix, currentVersion);
+    placeDataBits(matrix, interleaved);
+
+    const maskPattern = parseInt(document.getElementById('maskPatternSelect').value);
+    applyMask(matrix, maskPattern, currentVersion);
+    placeFormatInfo(matrix, currentEccLevel, maskPattern, currentVersion);
+    placeVersionInfo(matrix, currentVersion);
+
+    document.getElementById('qrCodeContainer').style.display = 'block';
+    renderQrCode(matrix);
+}
+
+function onApplyCustomPaddingClick() {
+    if (!encodedBitstream) {
+        alert('Please encode bitstream first!');
+        return;
+    }
+
+    const customPaddingInput = document.getElementById('customPaddingInput');
+    const inputValue = customPaddingInput.value.trim();
+
+    // Check if input is valid
+    if (!validateHexInput(inputValue)) {
+        alert('Invalid hex characters detected. Please use only 0-9 and A-F, separated by spaces or commas.');
+        return;
+    }
+
+    // Parse the hex input
+    const customBytes = parseCustomPaddingHex(inputValue);
+
+    if (customBytes.length === 0) {
+        alert('No hex values provided.');
+        return;
+    }
+
+    // Calculate where padding starts (mode + count + data + terminator + byte padding)
+    const messageBits = encodedBitstream.modeIndicator.length +
+                       encodedBitstream.charCount.length +
+                       encodedBitstream.messageData.length +
+                       encodedBitstream.terminator.length +
+                       encodedBitstream.bytePadding.length;
+    const messageBytes = Math.ceil(messageBits / 8);
+
+    // Apply custom padding to data bytes
+    const newDataBytes = [...encodedBitstream.dataBytes];
+    const paddingLength = encodedBitstream.padBytes.length;
+
+    // Replace padding bytes with custom values
+    // If too short: leave remainder unchanged
+    // If too long: truncate
+    for (let i = 0; i < Math.min(customBytes.length, paddingLength); i++) {
+        newDataBytes[messageBytes + i] = customBytes[i];
+    }
+
+    // Update the encodedBitstream
+    encodedBitstream.dataBytes = newDataBytes;
+
+    // Update the padBytes array for display
+    const newPadBytes = [...encodedBitstream.padBytes];
+    for (let i = 0; i < Math.min(customBytes.length, paddingLength); i++) {
+        newPadBytes[i] = customBytes[i];
+    }
+    encodedBitstream.padBytes = newPadBytes;
+
+    // Update the editable padding bytes display
+    const padByteElements = document.querySelectorAll('[data-section="pad-byte"]');
+    padByteElements.forEach((elem, index) => {
+        if (index < customBytes.length) {
+            elem.textContent = customBytes[index].toString(16).toUpperCase().padStart(2, '0');
+        }
+        // If customBytes is shorter, leave the rest unchanged (already displayed)
+    });
+
+    // Recalculate ECC with the new custom padding data
+    const blocks = splitIntoBlocks(encodedBitstream.dataBytes, currentVersion, currentEccLevel, blockSizeTable);
+    calculateEccForBlocks(blocks);
+    encodedBitstream.blocks = blocks;
+
+    // Update display to show the new data and ECC
+    displayEcc(blocks);
+
+    // Regenerate QR code with the new data
     const interleaved = interleaveBlocks(blocks);
     displayInterleavedBytes(interleaved, blocks);
 

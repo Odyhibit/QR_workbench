@@ -253,6 +253,29 @@
             </div>
 
             <div class="controls">
+                <h3 style="margin-top: 0;">Actions</h3>
+                <button class="mark-button" id="calculateEccButton" onclick="onCalculateEccClick()" disabled>Calculate ECC</button>
+            </div>
+
+            <div class="controls">
+                <h3 style="margin-top: 0;">Generate</h3>
+                <div class="control-group">
+                    <label for="maskPatternSelect">Mask Pattern:</label>
+                    <select id="maskPatternSelect">
+                        <option value="0">Pattern 0: (i+j) mod 2 = 0</option>
+                        <option value="1">Pattern 1: i mod 2 = 0</option>
+                        <option value="2">Pattern 2: j mod 3 = 0</option>
+                        <option value="3">Pattern 3: (i+j) mod 3 = 0</option>
+                        <option value="4">Pattern 4: ((i/2)+(j/3)) mod 2 = 0</option>
+                        <option value="5">Pattern 5: (i*j) mod 2 + (i*j) mod 3 = 0</option>
+                        <option value="6">Pattern 6: ((i*j) mod 2 + (i*j) mod 3) mod 2 = 0</option>
+                        <option value="7">Pattern 7: ((i+j) mod 2 + (i*j) mod 3) mod 2 = 0</option>
+                    </select>
+                </div>
+                <button class="mark-button" id="generateQrButton" onclick="onGenerateQrCodeClick()" disabled>Generate QR Code</button>
+            </div>
+
+            <div class="controls">
                 <h3 style="margin-top: 0;">Custom Data Insertion</h3>
                 <div class="control-group">
                     <label for="paddingInput">Padding Override (ASCII):</label>
@@ -272,25 +295,21 @@
             </div>
 
             <div class="controls">
-                <h3 style="margin-top: 0;">Actions</h3>
-                <button class="mark-button" id="calculateEccButton" onclick="onCalculateEccClick()" disabled>Calculate ECC</button>
-
-                <div style="margin-top: 15px; padding-top: 15px; border-top: 1px solid #ddd;">
-                    <div class="control-group">
-                        <label for="maskPatternSelect">Mask Pattern:</label>
-                        <select id="maskPatternSelect">
-                            <option value="0">Pattern 0: (i+j) mod 2 = 0</option>
-                            <option value="1">Pattern 1: i mod 2 = 0</option>
-                            <option value="2">Pattern 2: j mod 3 = 0</option>
-                            <option value="3">Pattern 3: (i+j) mod 3 = 0</option>
-                            <option value="4">Pattern 4: ((i/2)+(j/3)) mod 2 = 0</option>
-                            <option value="5">Pattern 5: (i*j) mod 2 + (i*j) mod 3 = 0</option>
-                            <option value="6">Pattern 6: ((i*j) mod 2 + (i*j) mod 3) mod 2 = 0</option>
-                            <option value="7">Pattern 7: ((i+j) mod 2 + (i*j) mod 3) mod 2 = 0</option>
-                        </select>
-                    </div>
-                    <button class="mark-button" id="generateQrButton" onclick="onGenerateQrCodeClick()" disabled>Generate QR Code</button>
+                <div class="collapsible-header">
+                    <h3 style="margin: 0;">Custom Padding (Advanced)</h3>
+                    <button class="toggle-collapse" id="toggleCustomPadding" onclick="toggleCustomPadding()">Hide</button>
+                </div>
+                <div id="customPaddingContent">
                     <button class="mark-button" id="zeroPaddingButton" onclick="onZeroPaddingClick()" disabled>Zero Out Padding</button>
+
+                    <div class="control-group" style="margin-top: 15px;">
+                        <label for="customPaddingInput">Custom Padding Hex Values (space or comma delimited):</label>
+                        <textarea id="customPaddingInput" rows="3" style="width: 100%; font-family: monospace; font-size: 12px; padding: 8px; box-sizing: border-box;" placeholder="EC 11 EC 11 or EC,11,EC,11"></textarea>
+                        <div style="font-size: 11px; color: #666; margin-top: 5px;">
+                            <span id="paddingByteCount">Padding bytes: -</span>
+                        </div>
+                    </div>
+                    <button class="mark-button" id="applyCustomPaddingButton" onclick="onApplyCustomPaddingClick()" disabled>Apply Custom Padding</button>
                 </div>
             </div>
         </div>
