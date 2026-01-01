@@ -693,8 +693,15 @@ function renderQrCode(matrix) {
     const ctx = canvas.getContext('2d');
 
     const size = matrix.length;
-    const moduleSize = Math.floor(canvas.width / (size + 8)); // Add quiet zone
-    const offset = moduleSize * 4; // Quiet zone
+    const quietZone = 4; // 4 modules on each side as per QR spec
+    const moduleSize = Math.floor(Math.min(canvas.width, canvas.height) / (size + quietZone * 2));
+
+    // Calculate total QR code size including quiet zone
+    const totalSize = (size + quietZone * 2) * moduleSize;
+
+    // Center the QR code on the canvas with even margins
+    const offsetX = Math.floor((canvas.width - totalSize) / 2) + (quietZone * moduleSize);
+    const offsetY = Math.floor((canvas.height - totalSize) / 2) + (quietZone * moduleSize);
 
     // Clear canvas
     ctx.fillStyle = 'white';
@@ -706,8 +713,8 @@ function renderQrCode(matrix) {
         for (let col = 0; col < size; col++) {
             if (matrix[row][col]) {
                 ctx.fillRect(
-                    offset + col * moduleSize,
-                    offset + row * moduleSize,
+                    offsetX + col * moduleSize,
+                    offsetY + row * moduleSize,
                     moduleSize,
                     moduleSize
                 );
