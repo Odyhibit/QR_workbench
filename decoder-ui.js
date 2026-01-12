@@ -21,6 +21,20 @@ function switchTab(tabIndex) {
             content.classList.remove('active');
         }
     });
+
+    // Redraw appropriate canvas when switching tabs
+    if (tabIndex === 0) {
+        // Tab 1: Redraw original image with grid
+        if (currentImage && imageData) {
+            drawImageWithGrid();
+        }
+    } else if (tabIndex === 1 || tabIndex === 2) {
+        // Tabs 2-3: Redraw cleaned QR canvas
+        if (moduleMatrix) {
+            drawCleanQR();
+        }
+    }
+    // Tab 4: No canvas redraw needed
 }
 
 // Toggle marking components
@@ -33,115 +47,6 @@ function toggleMark(component) {
         button.classList.remove('active');
     }
     drawCleanQR();
-}
-
-function toggleMarking() {
-    isMarkingCollapsed = !isMarkingCollapsed;
-    const content = document.getElementById('markingContent');
-    const toggle = document.getElementById('toggleMarking');
-    if (isMarkingCollapsed) {
-        content.classList.add('collapsed');
-        toggle.textContent = 'Show';
-    } else {
-        content.classList.remove('collapsed');
-        toggle.textContent = 'Hide';
-    }
-}
-
-// Toggle bitstream recovery panel
-function toggleBitstreamPanel() {
-    isBitstreamCollapsed = !isBitstreamCollapsed;
-    const panel = document.getElementById('bitstreamPanel');
-    const toggle = document.getElementById('toggleBitstream');
-    if (panel && toggle) {
-        if (isBitstreamCollapsed) {
-            panel.classList.add('collapsed');
-            toggle.textContent = 'Show';
-        } else {
-            panel.classList.remove('collapsed');
-            toggle.textContent = 'Hide';
-        }
-    }
-}
-
-// Toggle cleaned canvas visibility
-function toggleCleanCanvas() {
-    isCleanCanvasCollapsed = !isCleanCanvasCollapsed;
-    const panel = document.getElementById('cleanCanvasWrapper');
-    const toggle = document.getElementById('toggleCleanCanvas');
-    if (panel && toggle) {
-        if (isCleanCanvasCollapsed) {
-            panel.classList.add('collapsed');
-            toggle.textContent = 'Show';
-        } else {
-            panel.classList.remove('collapsed');
-            toggle.textContent = 'Hide';
-        }
-    }
-}
-
-// Toggle error-correction blocks visibility
-function toggleBlocksPanel() {
-    isBlocksCollapsed = !isBlocksCollapsed;
-    const panel = document.getElementById('blocksPanel');
-    const toggle = document.getElementById('toggleBlocks');
-    if (panel && toggle) {
-        if (isBlocksCollapsed) {
-            panel.classList.add('collapsed');
-            toggle.textContent = 'Show';
-        } else {
-            panel.classList.remove('collapsed');
-            toggle.textContent = 'Hide';
-        }
-    }
-}
-
-// Toggle format information visibility
-function toggleFormatInfo() {
-    isFormatInfoCollapsed = !isFormatInfoCollapsed;
-    const content = document.getElementById('formatInfoContent');
-    const toggle = document.getElementById('toggleFormatInfo');
-    if (content && toggle) {
-        if (isFormatInfoCollapsed) {
-            content.classList.add('collapsed');
-            toggle.textContent = 'Show';
-        } else {
-            content.classList.remove('collapsed');
-            toggle.textContent = 'Hide';
-        }
-    }
-}
-
-// Toggle recovery controls visibility
-function toggleRecovery() {
-    isRecoveryCollapsed = !isRecoveryCollapsed;
-    const content = document.getElementById('recoveryContent');
-    const toggle = document.getElementById('toggleRecovery');
-    if (content && toggle) {
-        if (isRecoveryCollapsed) {
-            content.classList.add('collapsed');
-            toggle.textContent = 'Show';
-        } else {
-            content.classList.remove('collapsed');
-            toggle.textContent = 'Hide';
-        }
-    }
-}
-
-// Toggle error correction controls visibility
-function toggleErrorCorrection() {
-    isErrorCorrectionCollapsed = !isErrorCorrectionCollapsed;
-    const content = document.getElementById('errorCorrectionContent');
-    const toggle = document.getElementById('toggleErrorCorrection');
-    if (content && toggle) {
-        if (isErrorCorrectionCollapsed) {
-            content.classList.add('collapsed');
-            toggle.textContent = 'Show';
-        } else {
-            content.classList.remove('collapsed');
-            toggle.textContent = 'Hide';
-        }
-    }
 }
 
 // Get color for module based on marking state
@@ -198,38 +103,45 @@ function drawCleanQR() {
     const totalModules = moduleCount + (quietZone * 2);
     const canvasSize = totalModules * modulePixelSize;
 
-    cleanCanvas.width = canvasSize;
-    cleanCanvas.height = canvasSize;
+    // Helper function to draw to a specific canvas
+    const drawToCanvas = (canvas, ctx) => {
+        canvas.width = canvasSize;
+        canvas.height = canvasSize;
 
-    // Fill with white background
-    cleanCtx.fillStyle = 'white';
-    cleanCtx.fillRect(0, 0, canvasSize, canvasSize);
+        // Fill with white background
+        ctx.fillStyle = 'white';
+        ctx.fillRect(0, 0, canvasSize, canvasSize);
 
-    // Draw modules with appropriate colors
-    for (let row = 0; row < moduleCount; row++) {
-        for (let col = 0; col < moduleCount; col++) {
-            const isBlack = moduleMatrix[row][col];
-            const color = getModuleColor(row, col, isBlack, moduleCount);
+        // Draw modules with appropriate colors
+        for (let row = 0; row < moduleCount; row++) {
+            for (let col = 0; col < moduleCount; col++) {
+                const isBlack = moduleMatrix[row][col];
+                const color = getModuleColor(row, col, isBlack, moduleCount);
 
-            if (color !== 'white') {
-                cleanCtx.fillStyle = color;
-                const x = (quietZone + col) * modulePixelSize;
-                const y = (quietZone + row) * modulePixelSize;
-                cleanCtx.fillRect(x, y, modulePixelSize, modulePixelSize);
+                if (color !== 'white') {
+                    ctx.fillStyle = color;
+                    const x = (quietZone + col) * modulePixelSize;
+                    const y = (quietZone + row) * modulePixelSize;
+                    ctx.fillRect(x, y, modulePixelSize, modulePixelSize);
+                }
             }
         }
-    }
 
-    // Draw outlines around highlighted modules (current byte being read)
-    if (currentHighlight.length > 0) {
-        cleanCtx.strokeStyle = '#FF8C00'; // Dark orange
-        cleanCtx.lineWidth = 2;
-        for (const pos of currentHighlight) {
-            const x = (quietZone + pos.col) * modulePixelSize;
-            const y = (quietZone + pos.row) * modulePixelSize;
-            cleanCtx.strokeRect(x, y, modulePixelSize, modulePixelSize);
+        // Draw outlines around highlighted modules (current byte being read)
+        if (currentHighlight.length > 0) {
+            ctx.strokeStyle = '#FF8C00'; // Dark orange
+            ctx.lineWidth = 2;
+            for (const pos of currentHighlight) {
+                const x = (quietZone + pos.col) * modulePixelSize;
+                const y = (quietZone + pos.row) * modulePixelSize;
+                ctx.strokeRect(x, y, modulePixelSize, modulePixelSize);
+            }
         }
-    }
+    };
+
+    // Draw to both canvases (Tab 2 and Tab 3)
+    drawToCanvas(cleanCanvas, cleanCtx);
+    drawToCanvas(cleanCanvas3, cleanCtx3);
 }
 
 // Draw the image and grid
@@ -602,6 +514,8 @@ function resetDecoderState() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     const cleanCtx = cleanCanvas.getContext('2d');
     cleanCtx.clearRect(0, 0, cleanCanvas.width, cleanCanvas.height);
+    const cleanCtx3 = cleanCanvas3.getContext('2d');
+    cleanCtx3.clearRect(0, 0, cleanCanvas3.width, cleanCanvas3.height);
 
     // Reset button states - Tab 1
     // (All Tab 1 buttons are always enabled)

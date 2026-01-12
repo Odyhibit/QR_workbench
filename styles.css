@@ -120,6 +120,23 @@ select {
     color: #555;
 }
 
+.canvas-container-small {
+    background: #f9f9f9;
+    padding: 15px;
+    border-radius: 4px;
+}
+
+.canvas-container-small h3 {
+    margin-top: 0;
+    margin-bottom: 10px;
+    font-size: 14px;
+}
+
+.canvas-container-small canvas {
+    max-width: 270px;
+    max-height: 270px;
+}
+
 canvas {
     border: 1px solid #ddd;
     display: block;
@@ -158,6 +175,16 @@ canvas {
 
 .tab-button.active {
     background: #4a9eff;
+    color: white;
+}
+
+.tab-button:not(:last-child)::after {
+    content: " →";
+    margin-left: 5px;
+    color: #999;
+}
+
+.tab-button.active:not(:last-child)::after {
     color: white;
 }
 
