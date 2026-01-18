@@ -244,6 +244,26 @@ function switchTab(index) {
             content.classList.remove('active');
         }
     });
+
+    // If switching to Encode tab, refresh it if padding was edited
+    if (index === 1) {
+        console.log('Switched to Encode tab (index 1)');
+        if (typeof performEncodeTabRefresh === 'function') {
+            setTimeout(() => {
+                console.log('Triggering performEncodeTabRefresh...');
+                performEncodeTabRefresh();
+            }, 50); // Increased delay to ensure DOM is ready
+        } else {
+            console.warn('performEncodeTabRefresh function not found!');
+        }
+    }
+
+    // If switching to Padding Editor tab, initialize it
+    if (index === 2 && currentMatrix) {
+        setTimeout(() => {
+            initializePaddingEditor();
+        }, 10);
+    }
 }
 
 // Toggle custom padding section

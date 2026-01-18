@@ -528,3 +528,55 @@ canvas {
     border: 1px solid #ddd;
     border-radius: 4px;
 }
+
+/* ========== Padding Editor Styles ========== */
+
+.brush-selector {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.brush-button {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border: 2px solid #ddd;
+    background: white;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+    transition: all 0.2s;
+}
+
+.brush-button:hover {
+    border-color: #4a9eff;
+}
+
+.brush-button.active {
+    border-color: #4a9eff;
+    background: #e3f2fd;
+    font-weight: bold;
+}
+
+.brush-preview {
+    width: 16px;
+    height: 16px;
+    border: 1px solid #333;
+    border-radius: 2px;
+}
+
+.brush-preview.black {
+    background: black;
+}
+
+.brush-preview.white {
+    background: white;
+}
+
+#paddingGrid {
+    image-rendering: pixelated;
+    image-rendering: -moz-crisp-edges;
+    image-rendering: crisp-edges;
+}

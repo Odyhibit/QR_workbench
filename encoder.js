@@ -29,6 +29,9 @@ let currentMessage = '';
 // State for encoded bitstream
 let encodedBitstream = null;
 
+// State for padding editor
+let currentMatrix = null;
+
 // Initialize
 function init() {
     // Set up event listeners
@@ -162,6 +165,60 @@ function onGenerateQrCodeClick() {
 
     // Render to canvas
     renderQrCode(matrix);
+
+    // Store matrix globally for padding editor
+    currentMatrix = matrix;
+
+    // Enable Padding Editor tab
+    const paddingEditorTab = document.querySelectorAll('.tab-button')[2];
+    if (paddingEditorTab) {
+        paddingEditorTab.disabled = false;
+    }
+
+    // Build padding editor data
+    buildPaddingEditorData();
+}
+
+function buildPaddingEditorData() {
+    if (!encodedBitstream || !encodedBitstream.blocks) {
+        return;
+    }
+
+    // Check if there are any padding bytes
+    if (encodedBitstream.padBytes.length === 0) {
+        return; // No padding to edit
+    }
+
+    // Build the padding module map
+    paddingModuleMap = buildPaddingModuleMap(
+        encodedBitstream,
+        encodedBitstream.blocks,
+        currentVersion
+    );
+
+    // Build editable cells set
+    editableCells.clear();
+    paddingModuleMap.forEach((modules) => {
+        modules.forEach(m => {
+            editableCells.add(`${m.row},${m.col}`);
+        });
+    });
+
+    // Store original padding bytes (deep copy)
+    originalPaddingBytes = [...encodedBitstream.padBytes];
+
+    // Store original matrix state (deep copy) - this is the masked matrix we'll display
+    originalMatrix = currentMatrix.map(row => [...row]);
+
+    // Clear any previous edits when generating a new QR code
+    paddingEdits.clear();
+
+    // Update info panel
+    const size = 21 + (currentVersion - 1) * 4;
+    document.getElementById('padEditorVersion').textContent = currentVersion;
+    document.getElementById('padEditorSize').textContent = `${size}×${size}`;
+    document.getElementById('padEditorByteCount').textContent = encodedBitstream.padBytes.length;
+    document.getElementById('padEditorModuleCount').textContent = editableCells.size;
 }
 
 function onZeroPaddingClick() {

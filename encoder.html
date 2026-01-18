@@ -166,6 +166,7 @@
     <div class="tabs">
         <button class="tab-button active" onclick="switchTab(0)">Data Entry</button>
         <button class="tab-button" onclick="switchTab(1)" disabled>Encode</button>
+        <button class="tab-button" onclick="switchTab(2)" disabled>Padding Editor</button>
     </div>
 
     <!-- Tab 1: Data Entry -->
@@ -330,11 +331,243 @@
         </div>
     </div>
 
+    <!-- Tab 3: Padding Editor -->
+    <div class="tab-content" id="tab3">
+        <div class="side-panel">
+            <div class="info-panel">
+                <h3>Padding Module Editor</h3>
+                <p><strong>Version:</strong> <span id="padEditorVersion">-</span></p>
+                <p><strong>Matrix Size:</strong> <span id="padEditorSize">-</span></p>
+                <p><strong>Padding Bytes:</strong> <span id="padEditorByteCount">-</span></p>
+                <p><strong>Editable Modules:</strong> <span id="padEditorModuleCount">-</span></p>
+            </div>
+
+            <div class="controls">
+                <h3 style="margin-top: 0;">Brush Tools</h3>
+                <div class="control-group">
+                    <label>Brush Mode:</label>
+                    <div class="brush-selector">
+                        <button id="brushBlack" class="brush-button active" onclick="setBrushMode('black')">
+                            <div class="brush-preview black"></div>
+                            Black
+                        </button>
+                        <button id="brushWhite" class="brush-button" onclick="setBrushMode('white')">
+                            <div class="brush-preview white"></div>
+                            White
+                        </button>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label for="moduleScale">Grid Zoom:</label>
+                    <input type="range" id="moduleScale" min="4" max="20" value="10" step="1">
+                    <span id="moduleScaleValue">10px</span>
+                </div>
+
+                <div class="control-group">
+                    <label for="qrOpacity">QR Opacity: <span id="qrOpacityValue">80</span>%</label>
+                    <input type="range" id="qrOpacity" min="20" max="100" value="80" step="5" style="width: 100%;">
+                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Adjust transparency to see logo underneath</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <h3 style="margin-top: 0;">Logo Blend</h3>
+                <div class="control-group">
+                    <label for="logoBlendUpload">Background Logo:</label>
+                    <input type="file" id="logoBlendUpload" accept="image/*" style="width: 100%; padding: 5px; font-size: 12px;">
+                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Upload an image to blend with padding modules</div>
+                    <div id="logoBlendPreview" style="display: none; margin-top: 8px; text-align: center;">
+                        <img id="logoBlendPreviewImg" style="max-width: 100%; max-height: 150px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Color Mode:</label>
+                    <select id="logoBlendColorMode" style="width: 100%; padding: 5px;">
+                        <option value="palette">Palette - Extract dominant colors</option>
+                        <option value="gradient">Gradient - Preserve hue/saturation</option>
+                    </select>
+                </div>
+
+                <div id="logoBlendGradientControls" style="display: none;">
+                    <div class="control-group">
+                        <label>Dark Max Luminosity: <span id="darkLumBlendLabel">33</span>%</label>
+                        <input type="range" id="darkMaxLumBlend" min="0" max="50" value="33" style="width: 100%;">
+                    </div>
+                    <div class="control-group">
+                        <label>Light Min Luminosity: <span id="lightLumBlendLabel">66</span>%</label>
+                        <input type="range" id="lightMinLumBlend" min="50" max="100" value="66" style="width: 100%;">
+                    </div>
+                </div>
+
+                <div id="logoBlendPaletteDisplay" style="display: none; margin-bottom: 10px;">
+                    <div style="font-size: 12px; font-weight: bold; margin-bottom: 5px;">Extracted Colors:</div>
+                    <div style="display: flex; gap: 4px; margin-bottom: 4px;">
+                        <div id="darkColor0" style="width: 25%; height: 20px; border: 1px solid #999;"></div>
+                        <div id="darkColor1" style="width: 25%; height: 20px; border: 1px solid #999;"></div>
+                        <div id="darkColor2" style="width: 25%; height: 20px; border: 1px solid #999;"></div>
+                        <div id="darkColor3" style="width: 25%; height: 20px; border: 1px solid #999;"></div>
+                    </div>
+                    <div style="display: flex; gap: 4px;">
+                        <div id="lightColor0" style="width: 25%; height: 20px; border: 1px solid #999;"></div>
+                        <div id="lightColor1" style="width: 25%; height: 20px; border: 1px solid #999;"></div>
+                        <div id="lightColor2" style="width: 25%; height: 20px; border: 1px solid #999;"></div>
+                        <div id="lightColor3" style="width: 25%; height: 20px; border: 1px solid #999;"></div>
+                    </div>
+                    <div style="font-size: 10px; color: #666; margin-top: 4px;">Top: Dark colors, Bottom: Light colors</div>
+                </div>
+
+                <div class="control-group">
+                    <label>Logo Scale: <span id="logoBlendScaleLabel">100</span>%</label>
+                    <input type="range" id="logoBlendScale" min="50" max="150" value="100" style="width: 100%;">
+                </div>
+
+                <button class="mark-button" id="applyLogoBlendBtn" onclick="applyLogoBlendToPadding()" disabled>Apply Logo Blend to Padding</button>
+                <div style="font-size: 11px; color: #666; margin-top: 8px;">
+                    <strong>Note:</strong> This automatically matches padding modules to the logo underneath, preserving your edit budget for data/ECC modules.
+                </div>
+
+                <div id="logoBlendStatus" style="display: none; margin-top: 10px; padding: 8px; border-radius: 4px; font-size: 12px;"></div>
+            </div>
+
+            <div class="controls">
+                <h3 style="margin-top: 0;">Actions</h3>
+                <button class="mark-button" onclick="resetPaddingEdits()">Reset All Edits</button>
+                <button class="mark-button" onclick="randomizePadding()">Randomize Padding</button>
+                <button class="mark-button" onclick="exportPaddingHex()">Export as Hex</button>
+            </div>
+
+            <div class="info-panel" id="paddingHexDisplay" style="display: none;">
+                <h3>Current Padding (Hex)</h3>
+                <textarea id="paddingHexValue" readonly style="width: 100%; height: 80px; font-family: monospace; font-size: 11px; padding: 5px; border: 1px solid #ddd; border-radius: 4px;"></textarea>
+            </div>
+        </div>
+
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <h2>Interactive Padding Grid</h2>
+                <p style="color: #666; margin-bottom: 10px;">
+                    Click and drag to paint modules. <strong>Hold Shift</strong> and drag to select a rectangular area. Locked modules (data/ECC) are greyed out.
+                </p>
+                <canvas id="paddingGrid" style="border: 1px solid #ddd; background: white; cursor: crosshair; display: block; image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges;"></canvas>
+            </div>
+
+            <div class="canvas-container" style="margin-top: 20px;">
+                <h2>Legend</h2>
+                <div style="display: flex; gap: 20px; flex-wrap: wrap;">
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 20px; height: 20px; background: black; border: 1px solid #999;"></div>
+                        <span>Black Module (Padding, Editable)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 20px; height: 20px; background: white; border: 1px solid #999;"></div>
+                        <span>White Module (Padding, Editable)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 20px; height: 20px; background: rgba(200, 200, 200, 0.6); border: 1px solid #999;"></div>
+                        <span>Locked (Data/ECC/Function Pattern)</span>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 8px;">
+                        <div style="width: 20px; height: 20px; background: #4a9eff; border: 1px solid #999;"></div>
+                        <span>Hover Highlight</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script src="qr-utils.js"></script>
     <script src="qr-reed-solomon.js"></script>
     <script src="qr-block-tables.js"></script>
     <script src="encoder-core.js"></script>
     <script src="encoder-ui.js"></script>
     <script src="encoder.js"></script>
+    <script src="padding-editor.js"></script>
+    <script src="logo-blend.js"></script>
+    <script>
+        // Logo blend UI event handlers
+        document.getElementById('logoBlendUpload')?.addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                loadLogoForBlending(file, function() {
+                    // Enable apply button
+                    document.getElementById('applyLogoBlendBtn').disabled = false;
+
+                    // Show preview image
+                    const previewImg = document.getElementById('logoBlendPreviewImg');
+                    const preview = document.getElementById('logoBlendPreview');
+                    if (previewImg && preview) {
+                        previewImg.src = logoBlendState.logoImage;
+                        preview.style.display = 'block';
+                    }
+
+                    // Show palette display if in palette mode
+                    if (logoBlendState.colorMode === 'palette') {
+                        displayExtractedPalette();
+                    }
+
+                    // Re-render the grid to show logo background
+                    if (typeof renderPaddingGrid === 'function') {
+                        renderPaddingGrid();
+                    }
+
+                    showLogoBlendStatus('✓ Logo loaded successfully! The logo now appears behind the QR grid. Click "Apply Logo Blend to Padding" to match padding modules.', 'success');
+                });
+            }
+        });
+
+        document.getElementById('logoBlendColorMode')?.addEventListener('change', function(e) {
+            logoBlendState.colorMode = e.target.value;
+
+            if (e.target.value === 'gradient') {
+                document.getElementById('logoBlendGradientControls').style.display = 'block';
+                document.getElementById('logoBlendPaletteDisplay').style.display = 'none';
+            } else {
+                document.getElementById('logoBlendGradientControls').style.display = 'none';
+                if (logoBlendState.logoImg) {
+                    displayExtractedPalette();
+                }
+            }
+        });
+
+        document.getElementById('darkMaxLumBlend')?.addEventListener('input', function(e) {
+            logoBlendState.darkMaxLuminosity = parseInt(e.target.value);
+            document.getElementById('darkLumBlendLabel').textContent = e.target.value;
+        });
+
+        document.getElementById('lightMinLumBlend')?.addEventListener('input', function(e) {
+            logoBlendState.lightMinLuminosity = parseInt(e.target.value);
+            document.getElementById('lightLumBlendLabel').textContent = e.target.value;
+        });
+
+        document.getElementById('logoBlendScale')?.addEventListener('input', function(e) {
+            logoBlendState.logoScale = parseInt(e.target.value);
+            document.getElementById('logoBlendScaleLabel').textContent = e.target.value;
+        });
+
+        function displayExtractedPalette() {
+            const display = document.getElementById('logoBlendPaletteDisplay');
+            if (!display) return;
+
+            // Show dark colors
+            for (let i = 0; i < 4; i++) {
+                const elem = document.getElementById(`darkColor${i}`);
+                if (elem && logoBlendState.darkPalette[i]) {
+                    elem.style.backgroundColor = logoBlendState.darkPalette[i];
+                }
+            }
+
+            // Show light colors
+            for (let i = 0; i < 4; i++) {
+                const elem = document.getElementById(`lightColor${i}`);
+                if (elem && logoBlendState.lightPalette[i]) {
+                    elem.style.backgroundColor = logoBlendState.lightPalette[i];
+                }
+            }
+
+            display.style.display = 'block';
+        }
+    </script>
 </body>
 </html>
