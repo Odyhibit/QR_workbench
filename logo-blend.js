@@ -284,7 +284,8 @@ let logoBlendState = {
     lightMinLuminosity: 66, // For gradient mode (50-100)
     logoScale: 100,
     logoX: 50, // Center percentage
-    logoY: 50  // Center percentage
+    logoY: 50, // Center percentage
+    transparentTreatment: 'light' // 'light' or 'dark' - how to treat transparent/outside pixels
 };
 
 // ========== STATUS DISPLAY ==========
@@ -407,12 +408,13 @@ function sampleLogoAtPosition(canvasX, canvasY, canvasSize, debug = false) {
     const r = logoBlendState.logoImageData.data[logoPixelIndex];
     const g = logoBlendState.logoImageData.data[logoPixelIndex + 1];
     const b = logoBlendState.logoImageData.data[logoPixelIndex + 2];
+    const a = logoBlendState.logoImageData.data[logoPixelIndex + 3];
 
     if (debug) {
-        console.log(`Sampled at canvas (${canvasX.toFixed(1)}, ${canvasY.toFixed(1)}) -> logo pixel (${clampedX}, ${clampedY}) = RGB(${r}, ${g}, ${b})`);
+        console.log(`Sampled at canvas (${canvasX.toFixed(1)}, ${canvasY.toFixed(1)}) -> logo pixel (${clampedX}, ${clampedY}) = RGBA(${r}, ${g}, ${b}, ${a})`);
     }
 
-    return [r, g, b];
+    return [r, g, b, a];
 }
 
 /**
@@ -424,12 +426,23 @@ function sampleLogoAtPosition(canvasX, canvasY, canvasSize, debug = false) {
  * @returns {string} Hex color
  */
 function getLogoBlendColor(canvasX, canvasY, isDark, canvasSize) {
-    const sampledRgb = sampleLogoAtPosition(canvasX, canvasY, canvasSize);
+    const sampledRgba = sampleLogoAtPosition(canvasX, canvasY, canvasSize);
 
-    if (!sampledRgb) {
-        // Module is outside logo, use default colors
-        return isDark ? '#000000' : '#ffffff';
+    if (!sampledRgba) {
+        // Module is outside logo, use transparentTreatment setting
+        const treatAsLight = logoBlendState.transparentTreatment === 'light';
+        return treatAsLight ? '#ffffff' : '#000000';
     }
+
+    // Check if pixel is transparent (alpha < 128)
+    const alpha = sampledRgba[3];
+    if (alpha < 128) {
+        // Transparent pixel, use transparentTreatment setting
+        const treatAsLight = logoBlendState.transparentTreatment === 'light';
+        return treatAsLight ? '#ffffff' : '#000000';
+    }
+
+    const sampledRgb = [sampledRgba[0], sampledRgba[1], sampledRgba[2]];
 
     if (logoBlendState.colorMode === 'gradient') {
         // Gradient mode: preserve hue/saturation, adjust lightness

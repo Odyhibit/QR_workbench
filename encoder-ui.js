@@ -264,6 +264,24 @@ function switchTab(index) {
             initializePaddingEditor();
         }, 10);
     }
+
+    // If switching to Size & Color tab, initialize it
+    if (index === 3 && currentMatrix) {
+        setTimeout(() => {
+            if (typeof initializeSizeColorEditor === 'function') {
+                initializeSizeColorEditor();
+            }
+        }, 10);
+    }
+
+    // If switching to Module Delete tab, initialize it
+    if (index === 4 && currentMatrix) {
+        setTimeout(() => {
+            if (typeof initModuleDeleteEditor === 'function') {
+                initModuleDeleteEditor();
+            }
+        }, 10);
+    }
 }
 
 // Toggle custom padding section

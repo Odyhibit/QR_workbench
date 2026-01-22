@@ -175,6 +175,18 @@ function onGenerateQrCodeClick() {
         paddingEditorTab.disabled = false;
     }
 
+    // Enable Size & Color tab
+    const sizeColorTab = document.querySelectorAll('.tab-button')[3];
+    if (sizeColorTab) {
+        sizeColorTab.disabled = false;
+    }
+
+    // Enable Module Delete tab
+    const moduleDeleteTab = document.querySelectorAll('.tab-button')[4];
+    if (moduleDeleteTab) {
+        moduleDeleteTab.disabled = false;
+    }
+
     // Build padding editor data
     buildPaddingEditorData();
 }
