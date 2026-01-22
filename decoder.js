@@ -21,6 +21,7 @@ const borderRight = document.getElementById('borderRight');
 let currentImage = null;
 let imageData = null;
 let moduleMatrix = null; // 2D array of module values (true = black, false = white)
+let originalMatrix = null; // Copy of matrix before unmasking (for reset)
 let usedModules = null; // 2D array tracking which modules have been decoded/used
 let isUnmasked = false;
 let isModeDecoded = false;
@@ -60,6 +61,9 @@ for (let i = 1; i <= 40; i++) {
     if (i === 1) option.selected = true;
     versionSelect.appendChild(option);
 }
+
+// Initialize format dropdown event listeners
+initFormatDropdowns();
 
 // Event handlers
 

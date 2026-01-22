@@ -1,6 +1,274 @@
 // decoder-ui.js
 // UI functions, event handlers, and display updates
 
+// Update ECC level dropdowns (syncs both Tab 1 and Tab 2)
+function updateEccDropdowns(eccLevel) {
+    const select1 = document.getElementById('eccLevelSelect');
+    const select2 = document.getElementById('eccLevelSelect2');
+    if (select1) select1.value = eccLevel || '';
+    if (select2) select2.value = eccLevel || '';
+}
+
+// Update mask pattern dropdowns (syncs both Tab 1 and Tab 2)
+function updateMaskDropdowns(maskPattern) {
+    const select1 = document.getElementById('maskPatternSelect');
+    const select2 = document.getElementById('maskPatternSelect2');
+    const value = maskPattern !== undefined && maskPattern !== null ? maskPattern.toString() : '-1';
+    if (select1) select1.value = value;
+    if (select2) select2.value = value;
+}
+
+// Handle ECC dropdown change
+function onEccLevelChange(newValue, sourceId) {
+    const oldValue = currentEccLevel;
+    currentEccLevel = newValue;
+
+    // Sync the other dropdown
+    const otherId = sourceId === 'eccLevelSelect' ? 'eccLevelSelect2' : 'eccLevelSelect';
+    const otherSelect = document.getElementById(otherId);
+    if (otherSelect) otherSelect.value = newValue;
+
+    // Reset decoder state if value actually changed and we have a matrix
+    if (oldValue !== newValue && originalMatrix) {
+        resetToOriginalMatrix();
+    }
+}
+
+// Handle mask pattern dropdown change
+function onMaskPatternChange(newValue, sourceId) {
+    const maskValue = parseInt(newValue);
+    const oldValue = currentMaskPattern;
+    currentMaskPattern = maskValue;
+
+    // Sync the other dropdown
+    const otherId = sourceId === 'maskPatternSelect' ? 'maskPatternSelect2' : 'maskPatternSelect';
+    const otherSelect = document.getElementById(otherId);
+    if (otherSelect) otherSelect.value = newValue;
+
+    // Update unmask button text
+    const unmaskButton = document.getElementById('unmaskButton');
+    if (unmaskButton && maskValue >= 0) {
+        unmaskButton.textContent = `Unmask ${maskValue}`;
+        unmaskButton.disabled = false;
+    }
+
+    // Reset decoder state if value actually changed and we have a matrix
+    if (oldValue !== maskValue && originalMatrix) {
+        resetToOriginalMatrix();
+    }
+}
+
+// Reset to original matrix state (before unmasking) and clear all downstream state
+function resetToOriginalMatrix() {
+    if (!originalMatrix) return;
+
+    // Restore matrix from original
+    const moduleCount = originalMatrix.length;
+    moduleMatrix = originalMatrix.map(row => [...row]);
+
+    // Reset used modules
+    usedModules = Array(moduleCount).fill(null).map(() => Array(moduleCount).fill(false));
+
+    // Reset state flags
+    isUnmasked = false;
+    isModeDecoded = false;
+    isSizeDecoded = false;
+    isBitstreamRecovered = false;
+    currentDataMode = '';
+    eciAssignment = null;
+    eciEncoding = null;
+    dataPositions = [];
+    bitstreamIndex = 0;
+    currentHighlight = [];
+    recoveredBitstream = '';
+    deinterleavedDataBits = '';
+    decodedMessageSize = null;
+    lastDeinterleaveMeta = null;
+    qrBlocks = [];
+    currentEcStep = 0;
+    syndromeCalculated = false;
+
+    // Reset buttons - Tab 2/3
+    const unmaskButton = document.getElementById('unmaskButton');
+    if (unmaskButton) {
+        unmaskButton.disabled = currentMaskPattern < 0;
+        if (currentMaskPattern >= 0) {
+            unmaskButton.textContent = `Unmask ${currentMaskPattern}`;
+        }
+    }
+
+    document.getElementById('recoverAllButton').disabled = true;
+    document.getElementById('nextByteButton').disabled = true;
+    document.getElementById('deinterleaveButton').disabled = true;
+    document.getElementById('decodeModeButton').disabled = true;
+    document.getElementById('decodeSizeButton').disabled = true;
+
+    // Reset buttons - Tab 4
+    document.getElementById('calculateSyndromesButton').disabled = true;
+    document.getElementById('findErrorLocationsButton').disabled = true;
+    document.getElementById('calculateErrorValuesButton').disabled = true;
+    document.getElementById('applyCorrectionsButton').disabled = true;
+    document.getElementById('decodeMessageButton').disabled = true;
+
+    // Clear display panels
+    document.getElementById('codewordDisplay').innerHTML = '';
+    document.getElementById('blockDisplay').innerHTML = '';
+    document.getElementById('ecStatus').style.display = 'none';
+    document.getElementById('ecStatusContent').innerHTML = '';
+    document.getElementById('decodedMessageBox').style.display = 'none';
+    document.getElementById('decodedMessageContent').innerHTML = '';
+
+    // Hide legend
+    const legend = document.getElementById('bitstreamLegend');
+    if (legend) legend.style.display = 'none';
+
+    // Reset info displays
+    document.getElementById('blockCount').textContent = '-';
+    document.getElementById('dataMode').textContent = '-';
+    document.getElementById('messageSize').textContent = '-';
+
+    // Reset marked components visuals (keep the toggle state)
+    // Redraw the cleaned QR
+    drawCleanQR();
+}
+
+// Calculate which mask patterns would result in byte mode (0100)
+function calculateByteMaskHint() {
+    if (!moduleMatrix) return null;
+
+    const moduleCount = moduleMatrix.length;
+
+    // Build data positions to find first 4 data bits
+    // This replicates buildDataPositions logic but we just need first 4
+    const positions = [];
+    let row = moduleCount - 1;
+    let col = moduleCount - 1;
+    let goingUp = true;
+    let inRightColumn = true;
+    let safetyCounter = 0;
+    const maxModules = moduleCount * moduleCount;
+
+    while (safetyCounter < maxModules && col >= 0 && positions.length < 4) {
+        safetyCounter++;
+
+        const currentCol = inRightColumn ? col : col - 1;
+
+        if (!isFunctionModule(row, currentCol, moduleCount)) {
+            positions.push({
+                row,
+                col: currentCol,
+                bit: moduleMatrix[row][currentCol] ? 1 : 0
+            });
+        }
+
+        if (inRightColumn) {
+            inRightColumn = false;
+        } else {
+            inRightColumn = true;
+
+            if (goingUp) {
+                row--;
+                if (row < 0) {
+                    goingUp = false;
+                    col -= 2;
+                    if (col === 6) col--;
+                    row = 0;
+                }
+            } else {
+                row++;
+                if (row >= moduleCount) {
+                    goingUp = true;
+                    col -= 2;
+                    if (col === 6) col--;
+                    row = moduleCount - 1;
+                }
+            }
+
+            if (col < 0) break;
+        }
+    }
+
+    if (positions.length < 4) return null;
+
+    // For each mask pattern, calculate what the unmasked mode indicator would be
+    const validMasks = [];
+
+    for (let mask = 0; mask < 8; mask++) {
+        let modeValue = 0;
+        for (let i = 0; i < 4; i++) {
+            const pos = positions[i];
+            let bitValue = pos.bit;
+
+            // Apply mask pattern to see what the unmasked value would be
+            if (shouldFlipModule(pos.row, pos.col, mask)) {
+                bitValue = bitValue ? 0 : 1;
+            }
+
+            modeValue = (modeValue << 1) | bitValue;
+        }
+
+        // Check if this would be byte mode (0100 = 4)
+        if (modeValue === 0b0100) {
+            validMasks.push(mask);
+        }
+    }
+
+    return validMasks;
+}
+
+// Update the byte mask hint display
+function updateByteMaskHint() {
+    const hintSpan = document.getElementById('byteMaskHint');
+    const hintSpan2 = document.getElementById('byteMaskHint2');
+
+    if (!moduleMatrix) {
+        if (hintSpan) hintSpan.textContent = '-';
+        if (hintSpan2) hintSpan2.textContent = '-';
+        return;
+    }
+
+    const validMasks = calculateByteMaskHint();
+
+    let hintText = '-';
+    if (validMasks && validMasks.length > 0) {
+        hintText = validMasks.join(', ');
+    } else if (validMasks && validMasks.length === 0) {
+        hintText = 'none';
+    }
+
+    if (hintSpan) hintSpan.textContent = hintText;
+    if (hintSpan2) hintSpan2.textContent = hintText;
+}
+
+// Initialize dropdown event listeners (called from decoder.js)
+function initFormatDropdowns() {
+    const eccSelect1 = document.getElementById('eccLevelSelect');
+    const eccSelect2 = document.getElementById('eccLevelSelect2');
+    const maskSelect1 = document.getElementById('maskPatternSelect');
+    const maskSelect2 = document.getElementById('maskPatternSelect2');
+
+    if (eccSelect1) {
+        eccSelect1.addEventListener('change', function() {
+            onEccLevelChange(this.value, 'eccLevelSelect');
+        });
+    }
+    if (eccSelect2) {
+        eccSelect2.addEventListener('change', function() {
+            onEccLevelChange(this.value, 'eccLevelSelect2');
+        });
+    }
+    if (maskSelect1) {
+        maskSelect1.addEventListener('change', function() {
+            onMaskPatternChange(this.value, 'maskPatternSelect');
+        });
+    }
+    if (maskSelect2) {
+        maskSelect2.addEventListener('change', function() {
+            onMaskPatternChange(this.value, 'maskPatternSelect2');
+        });
+    }
+}
+
 // Tab switching
 function switchTab(tabIndex) {
     const tabs = document.querySelectorAll('.tab-button');
@@ -206,6 +474,11 @@ function drawImageWithGrid() {
     // Sample modules and draw clean QR
     moduleMatrix = sampleModules();
 
+    // Store original matrix for reset functionality
+    if (moduleMatrix) {
+        originalMatrix = moduleMatrix.map(row => [...row]);
+    }
+
     // Reset usedModules for new image
     usedModules = Array(moduleCount).fill(null).map(() => Array(moduleCount).fill(false));
     isModeDecoded = false;
@@ -224,16 +497,17 @@ function drawImageWithGrid() {
     resetBitstreamState();
     drawCleanQR();
 
+    // Calculate byte mode mask hint
+    updateByteMaskHint();
+
     // Extract and display format information
     const formatBits = extractFormatInfo();
     if (formatBits) {
         const formatInfo = decodeFormatInfo(formatBits);
         if (formatInfo) {
-            document.getElementById('eccLevel').textContent = formatInfo.eccLevel;
-            document.getElementById('maskPattern').textContent = formatInfo.maskPattern;
-            // Update tab 2 info as well
-            document.getElementById('eccLevel2').textContent = formatInfo.eccLevel;
-            document.getElementById('maskPattern2').textContent = formatInfo.maskPattern;
+            // Update dropdowns with detected values
+            updateEccDropdowns(formatInfo.eccLevel);
+            updateMaskDropdowns(formatInfo.maskPattern);
             currentEccLevel = formatInfo.eccLevel;
 
             // Update unmask button
@@ -488,6 +762,7 @@ function copyEccToClipboard(button) {
 function resetDecoderState() {
     // Reset state variables
     moduleMatrix = null;
+    originalMatrix = null;
     usedModules = null;
     isUnmasked = false;
     isModeDecoded = false;
@@ -548,10 +823,14 @@ function resetDecoderState() {
     // Clear format information
     document.getElementById('versionInfo').textContent = '-';
     document.getElementById('versionInfo2').textContent = '-';
-    document.getElementById('eccLevel').textContent = '-';
-    document.getElementById('eccLevel2').textContent = '-';
-    document.getElementById('maskPattern').textContent = '-';
-    document.getElementById('maskPattern2').textContent = '-';
+    // Reset dropdowns
+    updateEccDropdowns('');
+    updateMaskDropdowns(-1);
+    // Reset byte mask hint
+    const byteMaskHint = document.getElementById('byteMaskHint');
+    const byteMaskHint2 = document.getElementById('byteMaskHint2');
+    if (byteMaskHint) byteMaskHint.textContent = '-';
+    if (byteMaskHint2) byteMaskHint2.textContent = '-';
     document.getElementById('blockCount').textContent = '-';
     document.getElementById('dataMode').textContent = '-';
     document.getElementById('messageSize').textContent = '-';

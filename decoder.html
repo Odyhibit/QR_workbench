@@ -61,8 +61,33 @@
             <div class="info-panel">
                 <h3>Format Information</h3>
                 <p><strong><span id="versionLabel">Version:</span></strong> <span id="versionInfo">-</span></p>
-                <p><strong>Error Correction:</strong> <span id="eccLevel">-</span></p>
-                <p><strong>Mask Pattern:</strong> <span id="maskPattern">-</span></p>
+                <div class="control-group" style="margin: 8px 0;">
+                    <label>Error Correction:</label>
+                    <select id="eccLevelSelect" style="width: 80px;">
+                        <option value="">-</option>
+                        <option value="L">L (7%)</option>
+                        <option value="M">M (15%)</option>
+                        <option value="Q">Q (25%)</option>
+                        <option value="H">H (30%)</option>
+                    </select>
+                    <span id="eccLevel" style="display: none;">-</span>
+                </div>
+                <div class="control-group" style="margin: 8px 0;">
+                    <label>Mask Pattern:</label>
+                    <select id="maskPatternSelect" style="width: 80px;">
+                        <option value="-1">-</option>
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                    </select>
+                    <span id="maskPattern" style="display: none;">-</span>
+                </div>
+                <p style="margin-top: 8px; font-size: 12px; color: #666;"><strong>Byte mode mask:</strong> <span id="byteMaskHint">-</span></p>
             </div>
 
             <div class="status">
@@ -95,8 +120,33 @@
             <div class="info-panel">
                 <h3>Format Information</h3>
                 <p><strong><span id="versionLabel2">Version:</span></strong> <span id="versionInfo2">-</span></p>
-                <p><strong>Error Correction:</strong> <span id="eccLevel2">-</span></p>
-                <p><strong>Mask Pattern:</strong> <span id="maskPattern2">-</span></p>
+                <div class="control-group" style="margin: 8px 0;">
+                    <label>Error Correction:</label>
+                    <select id="eccLevelSelect2" style="width: 80px;">
+                        <option value="">-</option>
+                        <option value="L">L (7%)</option>
+                        <option value="M">M (15%)</option>
+                        <option value="Q">Q (25%)</option>
+                        <option value="H">H (30%)</option>
+                    </select>
+                    <span id="eccLevel2" style="display: none;">-</span>
+                </div>
+                <div class="control-group" style="margin: 8px 0;">
+                    <label>Mask Pattern:</label>
+                    <select id="maskPatternSelect2" style="width: 80px;">
+                        <option value="-1">-</option>
+                        <option value="0">0</option>
+                        <option value="1">1</option>
+                        <option value="2">2</option>
+                        <option value="3">3</option>
+                        <option value="4">4</option>
+                        <option value="5">5</option>
+                        <option value="6">6</option>
+                        <option value="7">7</option>
+                    </select>
+                    <span id="maskPattern2" style="display: none;">-</span>
+                </div>
+                <p style="margin-top: 8px; font-size: 12px; color: #666;"><strong>Byte mode mask:</strong> <span id="byteMaskHint2">-</span></p>
                 <p><strong>Blocks:</strong> <span id="blockCount">-</span></p>
                 <p><strong>Data Mode:</strong> <span id="dataMode">-</span></p>
                 <p><strong>Message Size:</strong> <span id="messageSize">-</span></p>
