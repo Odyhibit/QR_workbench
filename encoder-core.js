@@ -4,7 +4,14 @@
 const MODE_INDICATORS = {
     numeric: '0001',
     alphanumeric: '0010',
-    byte: '0100'
+    byte: '0100',
+    eci: '0111'
+};
+
+// ECI assignment numbers
+const ECI_ASSIGNMENTS = {
+    utf8: 26,
+    iso8859_1: 3
 };
 
 // Alphanumeric character values
@@ -73,7 +80,7 @@ function encodeAlphanumeric(message) {
     return bits;
 }
 
-// Encode byte message
+// Encode byte message (ISO-8859-1 / Latin-1)
 function encodeByte(message) {
     let bits = '';
     for (let i = 0; i < message.length; i++) {
@@ -81,6 +88,45 @@ function encodeByte(message) {
         bits += toBinary(charCode, 8);
     }
     return bits;
+}
+
+// Encode message as UTF-8 bytes
+function encodeByteUtf8(message) {
+    // Use TextEncoder for proper UTF-8 encoding
+    const encoder = new TextEncoder();
+    const utf8Bytes = encoder.encode(message);
+
+    let bits = '';
+    for (let i = 0; i < utf8Bytes.length; i++) {
+        bits += toBinary(utf8Bytes[i], 8);
+    }
+
+    return { bits, byteLength: utf8Bytes.length };
+}
+
+// Encode ECI assignment number
+// Returns bit string for the ECI assignment
+function encodeEciAssignment(assignment) {
+    if (assignment <= 127) {
+        // 8-bit format: 0xxxxxxx
+        return '0' + toBinary(assignment, 7);
+    } else if (assignment <= 16383) {
+        // 16-bit format: 10xxxxxxxxxxxxxx
+        return '10' + toBinary(assignment, 14);
+    } else {
+        // 24-bit format: 110xxxxxxxxxxxxxxxxxxxxx
+        return '110' + toBinary(assignment, 21);
+    }
+}
+
+// Check if message requires UTF-8 encoding (contains non-Latin-1 characters)
+function requiresUtf8(message) {
+    for (let i = 0; i < message.length; i++) {
+        if (message.charCodeAt(i) > 255) {
+            return true;
+        }
+    }
+    return false;
 }
 
 // Encode message based on mode
@@ -95,23 +141,60 @@ function encodeMessage(message, mode) {
 }
 
 // Generate complete bitstream
-function generateBitstream(currentMessage, currentMode, currentVersion, currentEccLevel, capacityTable) {
+// useUtf8: 'auto' (default) | true | false
+function generateBitstream(currentMessage, currentMode, currentVersion, currentEccLevel, capacityTable, useUtf8 = 'auto') {
     const key = `${currentVersion}-${currentEccLevel}`;
     const dataCodewords = capacityTable[key];
     const totalBits = dataCodewords * 8;
 
-    // 1. Mode indicator
-    const modeIndicator = MODE_INDICATORS[currentMode];
+    // Determine if we need UTF-8 encoding
+    let needsUtf8 = false;
+    if (currentMode === 'byte') {
+        if (useUtf8 === 'auto') {
+            needsUtf8 = requiresUtf8(currentMessage);
+        } else {
+            needsUtf8 = useUtf8;
+        }
+    }
 
-    // 2. Character count indicator
-    const charCountSize = getCharCountIndicatorSize(currentVersion, currentMode);
-    const charCount = toBinary(currentMessage.length, charCountSize);
+    let eciHeader = '';
+    let modeIndicator;
+    let charCount;
+    let messageData;
 
-    // 3. Encoded message data
-    const messageData = encodeMessage(currentMessage, currentMode);
+    if (needsUtf8 && currentMode === 'byte') {
+        // UTF-8 mode with ECI header
+        // 1. ECI mode indicator
+        eciHeader = MODE_INDICATORS.eci;
+
+        // 2. ECI assignment number (26 = UTF-8)
+        eciHeader += encodeEciAssignment(ECI_ASSIGNMENTS.utf8);
+
+        // 3. Byte mode indicator
+        modeIndicator = MODE_INDICATORS.byte;
+
+        // 4. Encode message as UTF-8 and get byte count
+        const utf8Result = encodeByteUtf8(currentMessage);
+        messageData = utf8Result.bits;
+
+        // 5. Character count is the UTF-8 byte length, not string length
+        const charCountSize = getCharCountIndicatorSize(currentVersion, 'byte');
+        charCount = toBinary(utf8Result.byteLength, charCountSize);
+    } else {
+        // Standard encoding (no ECI)
+        // 1. Mode indicator
+        modeIndicator = MODE_INDICATORS[currentMode];
+
+        // 2. Character count indicator
+        const charCountSize = getCharCountIndicatorSize(currentVersion, currentMode);
+        charCount = toBinary(currentMessage.length, charCountSize);
+
+        // 3. Encoded message data
+        messageData = encodeMessage(currentMessage, currentMode);
+    }
 
     // 4. Terminator (up to 4 bits of zeros)
-    let bitstream = modeIndicator + charCount + messageData;
+    let bitstream = eciHeader + modeIndicator + charCount + messageData;
     const terminatorLength = Math.min(4, totalBits - bitstream.length);
     const terminator = '0'.repeat(terminatorLength);
     bitstream += terminator;
@@ -140,6 +223,7 @@ function generateBitstream(currentMessage, currentMode, currentVersion, currentE
     }
 
     return {
+        eciHeader,
         modeIndicator,
         charCount,
         messageData,
@@ -148,14 +232,16 @@ function generateBitstream(currentMessage, currentMode, currentVersion, currentE
         padBytes,
         dataBytes,
         totalBits: bitstream.length,
-        messageBits: modeIndicator.length + charCount.length + messageData.length
+        messageBits: eciHeader.length + modeIndicator.length + charCount.length + messageData.length,
+        usedUtf8: needsUtf8
     };
 }
 
 // Zero out all padding bytes (converts 0xEC and 0x11 to 0x00)
 function zeroPaddingBytes(bitstreamData) {
-    // Calculate how many bits are actual message (mode + count + data + terminator + byte padding)
-    const messageBits = bitstreamData.modeIndicator.length +
+    // Calculate how many bits are actual message (eci + mode + count + data + terminator + byte padding)
+    const messageBits = (bitstreamData.eciHeader || '').length +
+                       bitstreamData.modeIndicator.length +
                        bitstreamData.charCount.length +
                        bitstreamData.messageData.length +
                        bitstreamData.terminator.length +

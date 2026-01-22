@@ -53,7 +53,7 @@ function init() {
 
     // Initial state
     currentEccLevel = eccLevelSelect.value;
-    updateCharsetInfo(currentMode);
+    updateCharsetInfo(currentMode, currentMessage);
     currentVersion = populateVersionDropdown(currentMessage, currentMode, currentEccLevel, currentVersion, versionSelect, capacityTable);
     updateCapacityDisplay(currentVersion, currentEccLevel, currentMode, currentMessage, capacityTable);
 }
@@ -61,7 +61,7 @@ function init() {
 // Handle mode change
 function onModeChange() {
     currentMode = dataModeSelect.value;
-    updateCharsetInfo(currentMode);
+    updateCharsetInfo(currentMode, currentMessage);
     currentVersion = populateVersionDropdown(currentMessage, currentMode, currentEccLevel, currentVersion, versionSelect, capacityTable);
     updateCapacityDisplay(currentVersion, currentEccLevel, currentMode, currentMessage, capacityTable);
     validateMessage(currentMessage, currentMode, NUMERIC_CHARSET, ALPHANUMERIC_CHARSET);
@@ -83,6 +83,7 @@ function onVersionChange() {
 // Handle message input
 function onMessageInput() {
     currentMessage = messageInput.value;
+    updateCharsetInfo(currentMode, currentMessage);
     currentVersion = populateVersionDropdown(currentMessage, currentMode, currentEccLevel, currentVersion, versionSelect, capacityTable);
     updateCapacityDisplay(currentVersion, currentEccLevel, currentMode, currentMessage, capacityTable);
     validateMessage(currentMessage, currentMode, NUMERIC_CHARSET, ALPHANUMERIC_CHARSET);

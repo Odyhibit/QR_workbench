@@ -131,14 +131,24 @@ function updateCapacityDisplay(currentVersion, currentEccLevel, currentMode, cur
 }
 
 // Update charset information display
-function updateCharsetInfo(currentMode) {
-    const info = {
-        numeric: 'Allowed: 0-9',
-        alphanumeric: 'Allowed: 0-9, A-Z, space, $ % * + - . / :',
-        byte: 'Allowed: Any characters (ISO-8859-1)'
-    };
+function updateCharsetInfo(currentMode, currentMessage) {
+    let info;
 
-    document.getElementById('charsetInfo').textContent = info[currentMode];
+    if (currentMode === 'numeric') {
+        info = 'Allowed: 0-9';
+    } else if (currentMode === 'alphanumeric') {
+        info = 'Allowed: 0-9, A-Z, space, $ % * + - . / :';
+    } else {
+        // Check if message requires UTF-8
+        const needsUtf8 = currentMessage && requiresUtf8(currentMessage);
+        if (needsUtf8) {
+            info = 'Mode: UTF-8 (ECI 26) - Non-Latin characters detected';
+        } else {
+            info = 'Allowed: Any characters (ISO-8859-1, auto-upgrades to UTF-8)';
+        }
+    }
+
+    document.getElementById('charsetInfo').textContent = info;
 }
 
 // Validate character based on current mode
@@ -341,11 +351,27 @@ function displayBitstream(bitstream, currentMode, currentMessage) {
     const display = document.getElementById('bitstreamDisplay');
 
     let html = '';
+    let sectionNum = 1;
+
+    // ECI Header section (if present)
+    if (bitstream.eciHeader && bitstream.eciHeader.length > 0) {
+        html += `
+            <div class="bitstream-section" style="border-color: #9c27b0; background: #f3e5f5;">
+                <h4>${sectionNum}. ECI Header (UTF-8)</h4>
+                <div class="bit-info">${bitstream.eciHeader.length} bits - Extended Channel Interpretation for UTF-8 encoding</div>
+                <div class="bitstream-field" contenteditable="true" data-section="eci" spellcheck="false">${bitstream.eciHeader}</div>
+                <div class="bit-info" style="margin-top: 5px;">
+                    0111 = ECI mode, 00011010 = Assignment 26 (UTF-8)
+                </div>
+            </div>
+        `;
+        sectionNum++;
+    }
 
     // Mode Indicator section
     html += `
         <div class="bitstream-section section-mode">
-            <h4>1. Mode Indicator</h4>
+            <h4>${sectionNum}. Mode Indicator</h4>
             <div class="bit-info">4 bits - Identifies the encoding mode</div>
             <div class="bitstream-field" contenteditable="true" data-section="mode" spellcheck="false">${bitstream.modeIndicator}</div>
             <div class="bit-info" style="margin-top: 5px;">
@@ -353,53 +379,60 @@ function displayBitstream(bitstream, currentMode, currentMessage) {
             </div>
         </div>
     `;
+    sectionNum++;
 
     // Character Count Indicator section
+    const countLabel = bitstream.usedUtf8 ? 'bytes (UTF-8 encoded length)' : 'characters';
     html += `
         <div class="bitstream-section section-count">
-            <h4>2. Character Count Indicator</h4>
-            <div class="bit-info">${bitstream.charCount.length} bits - Number of characters in message</div>
+            <h4>${sectionNum}. Character Count Indicator</h4>
+            <div class="bit-info">${bitstream.charCount.length} bits - Number of ${countLabel} in message</div>
             <div class="bitstream-field" contenteditable="true" data-section="count" spellcheck="false">${bitstream.charCount}</div>
             <div class="bit-info" style="margin-top: 5px;">
-                Decimal: ${parseInt(bitstream.charCount, 2)} characters
+                Decimal: ${parseInt(bitstream.charCount, 2)} ${countLabel}
             </div>
         </div>
     `;
+    sectionNum++;
 
     // Message Data section
+    const encodingNote = bitstream.usedUtf8 ? 'UTF-8 byte' : currentMode;
     html += `
         <div class="bitstream-section section-data">
-            <h4>3. Encoded Message Data</h4>
-            <div class="bit-info">${bitstream.messageData.length} bits - Your message encoded in ${currentMode} mode</div>
+            <h4>${sectionNum}. Encoded Message Data</h4>
+            <div class="bit-info">${bitstream.messageData.length} bits - Your message encoded in ${encodingNote} mode</div>
             <div class="bitstream-field" contenteditable="true" data-section="data" spellcheck="false">${bitstream.messageData}</div>
             <div class="bit-info" style="margin-top: 5px;">
                 Original message: "${currentMessage}"
             </div>
         </div>
     `;
+    sectionNum++;
 
     // Terminator section
     html += `
         <div class="bitstream-section section-padding">
-            <h4>4. Terminator</h4>
+            <h4>${sectionNum}. Terminator</h4>
             <div class="bit-info">${bitstream.terminator.length} bits - Signals end of message (up to 4 zeros)</div>
             <div class="bitstream-field" contenteditable="true" data-section="terminator" spellcheck="false">${bitstream.terminator}</div>
         </div>
     `;
+    sectionNum++;
 
     // Byte alignment padding section
     html += `
         <div class="bitstream-section section-mode">
-            <h4>5. Byte Alignment Padding</h4>
+            <h4>${sectionNum}. Byte Alignment Padding</h4>
             <div class="bit-info">${bitstream.bytePadding.length} bits - Pads to byte boundary</div>
             <div class="bitstream-field" contenteditable="true" data-section="byte-padding" spellcheck="false">${bitstream.bytePadding}</div>
         </div>
     `;
+    sectionNum++;
 
     // Pad bytes section
     html += `
         <div class="bitstream-section section-count">
-            <h4>6. Pad Bytes</h4>
+            <h4>${sectionNum}. Pad Bytes</h4>
             <div class="bit-info">${bitstream.padBytes.length} bytes - Fills remaining capacity (Pattern: 0xEC 0x11)</div>
             <div class="hex-grid">
     `;
@@ -412,11 +445,12 @@ function displayBitstream(bitstream, currentMode, currentMessage) {
             </div>
         </div>
     `;
+    sectionNum++;
 
     // ECC section (placeholder for now) - using neutral grey
     html += `
         <div class="bitstream-section" style="border-color: #999; background: #f5f5f5;">
-            <h4>7. Error Correction Codewords (ECC)</h4>
+            <h4>${sectionNum}. Error Correction Codewords (ECC)</h4>
             <div class="bit-info">Click "Calculate ECC" to generate error correction bytes</div>
             <div id="eccDisplay" class="hex-grid">
                 <p style="color: #999; margin: 10px 0;">ECC not yet calculated...</p>
@@ -518,6 +552,7 @@ function readAllEditedValues(encodedBitstream, blockSizeTable, currentVersion, c
     }
 
     // Read bitstream sections
+    const eciElem = document.querySelector('[data-section="eci"]');
     const modeElem = document.querySelector('[data-section="mode"]');
     const countElem = document.querySelector('[data-section="count"]');
     const dataElem = document.querySelector('[data-section="data"]');
@@ -527,6 +562,7 @@ function readAllEditedValues(encodedBitstream, blockSizeTable, currentVersion, c
     // Helper function to clean bit strings (remove all non-01 characters)
     const cleanBitString = (str) => str.replace(/[^01]/g, '');
 
+    if (eciElem) encodedBitstream.eciHeader = cleanBitString(eciElem.textContent);
     if (modeElem) encodedBitstream.modeIndicator = cleanBitString(modeElem.textContent);
     if (countElem) encodedBitstream.charCount = cleanBitString(countElem.textContent);
     if (dataElem) encodedBitstream.messageData = cleanBitString(dataElem.textContent);
@@ -545,7 +581,8 @@ function readAllEditedValues(encodedBitstream, blockSizeTable, currentVersion, c
     });
 
     // Reconstruct data bytes from bitstream
-    const dataBits = encodedBitstream.modeIndicator +
+    const dataBits = (encodedBitstream.eciHeader || '') +
+                     encodedBitstream.modeIndicator +
                      encodedBitstream.charCount +
                      encodedBitstream.messageData +
                      encodedBitstream.terminator +
