@@ -19,7 +19,11 @@ let sizeColorState = {
     quietZone: 2, // modules (0-4)
     fullSizeSeparators: false, // toggle for testing scan performance
     finderShape: 'square', // 'square', 'circle', 'hybrid', 'hybrid-inverse', 'rounded'
-    transparentTreatment: 'light' // 'light' or 'dark' - how to treat transparent/outside pixels
+    transparentTreatment: 'light', // 'light' or 'dark' - how to treat transparent/outside pixels
+    // Finder pattern colors: outer dark, middle light, center dark
+    finderOuterColor: '#000000',
+    finderMiddleColor: '#ffffff',
+    finderCenterColor: '#000000'
 };
 
 // ========== LOGO HANDLING ==========
@@ -226,15 +230,15 @@ function getSizeColorModuleColor(canvasX, canvasY, isDark, canvasSize) {
     }
 
     // Sample logo
-    const sampledRgba = sampleSizeColorLogo(canvasX, canvasY, canvasSize);
+    let sampledRgba = sampleSizeColorLogo(canvasX, canvasY, canvasSize);
 
     if (!sampledRgba) {
         // Outside logo - use transparentTreatment setting
         const treatAsLight = sizeColorState.transparentTreatment === 'light';
         if (sizeColorState.colorMode === 'palette') {
-            // In palette mode, keep dark/light module intent but use background slot.
+            // In palette mode, keep dark/light module intent but use background slot (position 0).
             const palette = isDark ? sizeColorState.darkPalette : sizeColorState.lightPalette;
-            return palette[1] || palette[0]; // Fallback to first if second doesn't exist
+            return palette[0];
         }
         // Gradient mode: fall through with a default sampled color.
         sampledRgba = treatAsLight ? [255, 255, 255, 255] : [0, 0, 0, 255];
@@ -247,7 +251,7 @@ function getSizeColorModuleColor(canvasX, canvasY, isDark, canvasSize) {
         const treatAsLight = sizeColorState.transparentTreatment === 'light';
         if (sizeColorState.colorMode === 'palette') {
             const palette = isDark ? sizeColorState.darkPalette : sizeColorState.lightPalette;
-            return palette[1] || palette[0];
+            return palette[0];
         }
         // Gradient mode: fall through with a default sampled color.
         sampledRgba = treatAsLight ? [255, 255, 255, 255] : [0, 0, 0, 255];
@@ -385,8 +389,11 @@ function drawRoundedSeparators(ctx, startRow, startCol, modulePixelSize, offsetP
 
 /**
  * Draw a custom-shaped finder pattern (7x7 core only, no separator)
+ * @param outerColor - Color for the outer 7x7 dark ring
+ * @param middleColor - Color for the middle 5x5 light ring
+ * @param centerColor - Color for the inner 3x3 dark center
  */
-function drawCustomFinderPattern(ctx, startRow, startCol, modulePixelSize, offsetPixels, darkColor, lightColor, sizeFraction, size) {
+function drawCustomFinderPattern(ctx, startRow, startCol, modulePixelSize, offsetPixels, outerColor, middleColor, centerColor, sizeFraction, size) {
     const centerModuleX = startCol + 3.5;
     const centerModuleY = startRow + 3.5;
     const centerX = offsetPixels + (centerModuleX * modulePixelSize);
@@ -423,19 +430,19 @@ function drawCustomFinderPattern(ctx, startRow, startCol, modulePixelSize, offse
         const thicknessBoost = 0.08; // Extra modules of thickness
 
         // Outer circle (7 modules diameter = 3.5 module radius + boost)
-        ctx.fillStyle = darkColor;
+        ctx.fillStyle = outerColor;
         ctx.beginPath();
         ctx.arc(centerX, centerY, (3.5 + thicknessBoost) * modulePixelSize, 0, Math.PI * 2);
         ctx.fill();
 
         // Middle circle (5 modules diameter = 2.5 module radius - boost to keep outer ring thicker)
-        ctx.fillStyle = lightColor;
+        ctx.fillStyle = middleColor;
         ctx.beginPath();
         ctx.arc(centerX, centerY, (2.5 - thicknessBoost * 0.5) * modulePixelSize, 0, Math.PI * 2);
         ctx.fill();
 
         // Inner circle (3 modules diameter = 1.5 module radius)
-        ctx.fillStyle = darkColor;
+        ctx.fillStyle = centerColor;
         ctx.beginPath();
         ctx.arc(centerX, centerY, 1.5 * modulePixelSize, 0, Math.PI * 2);
         ctx.fill();
@@ -447,11 +454,11 @@ function drawCustomFinderPattern(ctx, startRow, startCol, modulePixelSize, offse
         // Draw rounded separators FIRST if full-size separators are enabled
         // This way the finder pattern will be drawn on top and won't have its corners trimmed
         if (sizeColorState.fullSizeSeparators) {
-            drawRoundedSeparators(ctx, startRow, startCol, modulePixelSize, offsetPixels, lightColor, size);
+            drawRoundedSeparators(ctx, startRow, startCol, modulePixelSize, offsetPixels, middleColor, size);
         }
 
         // Outer square (7x7)
-        ctx.fillStyle = darkColor;
+        ctx.fillStyle = outerColor;
         const outerX = offsetPixels + (startCol * modulePixelSize);
         const outerY = offsetPixels + (startRow * modulePixelSize);
         const outerSize = 7 * modulePixelSize;
@@ -461,7 +468,7 @@ function drawCustomFinderPattern(ctx, startRow, startCol, modulePixelSize, offse
         ctx.fill();
 
         // Middle square (5x5)
-        ctx.fillStyle = lightColor;
+        ctx.fillStyle = middleColor;
         const middleX = offsetPixels + ((startCol + 1) * modulePixelSize);
         const middleY = offsetPixels + ((startRow + 1) * modulePixelSize);
         const middleSize = 5 * modulePixelSize;
@@ -471,7 +478,7 @@ function drawCustomFinderPattern(ctx, startRow, startCol, modulePixelSize, offse
         ctx.fill();
 
         // Inner square (3x3)
-        ctx.fillStyle = darkColor;
+        ctx.fillStyle = centerColor;
         const innerX = offsetPixels + ((startCol + 2) * modulePixelSize);
         const innerY = offsetPixels + ((startRow + 2) * modulePixelSize);
         const innerSize = 3 * modulePixelSize;
@@ -485,19 +492,19 @@ function drawCustomFinderPattern(ctx, startRow, startCol, modulePixelSize, offse
         const thicknessBoost = 0.08;
 
         // Outer circle
-        ctx.fillStyle = darkColor;
+        ctx.fillStyle = outerColor;
         ctx.beginPath();
         ctx.arc(centerX, centerY, (3.5 + thicknessBoost) * modulePixelSize, 0, Math.PI * 2);
         ctx.fill();
 
         // Middle circle
-        ctx.fillStyle = lightColor;
+        ctx.fillStyle = middleColor;
         ctx.beginPath();
         ctx.arc(centerX, centerY, (2.5 - thicknessBoost * 0.5) * modulePixelSize, 0, Math.PI * 2);
         ctx.fill();
 
         // Inner square (3x3 modules)
-        ctx.fillStyle = darkColor;
+        ctx.fillStyle = centerColor;
         const innerSize = 3 * modulePixelSize;
         const innerX = offsetPixels + ((startCol + 2) * modulePixelSize);
         const innerY = offsetPixels + ((startRow + 2) * modulePixelSize);
@@ -508,21 +515,21 @@ function drawCustomFinderPattern(ctx, startRow, startCol, modulePixelSize, offse
         const thicknessBoost = 0.08;
 
         // Outer square (7x7 + boost)
-        ctx.fillStyle = darkColor;
+        ctx.fillStyle = outerColor;
         const outerX = offsetPixels + (startCol * modulePixelSize) - (thicknessBoost * modulePixelSize);
         const outerY = offsetPixels + (startRow * modulePixelSize) - (thicknessBoost * modulePixelSize);
         const outerSize = (7 + thicknessBoost * 2) * modulePixelSize;
         ctx.fillRect(outerX, outerY, outerSize, outerSize);
 
         // Middle square (5x5 - slight reduction to keep outer thicker)
-        ctx.fillStyle = lightColor;
+        ctx.fillStyle = middleColor;
         const middleX = offsetPixels + ((startCol + 1) * modulePixelSize) + (thicknessBoost * 0.5 * modulePixelSize);
         const middleY = offsetPixels + ((startRow + 1) * modulePixelSize) + (thicknessBoost * 0.5 * modulePixelSize);
         const middleSize = (5 - thicknessBoost) * modulePixelSize;
         ctx.fillRect(middleX, middleY, middleSize, middleSize);
 
         // Inner circle (3 modules diameter = 1.5 module radius)
-        ctx.fillStyle = darkColor;
+        ctx.fillStyle = centerColor;
         ctx.beginPath();
         ctx.arc(centerX, centerY, 1.5 * modulePixelSize, 0, Math.PI * 2);
         ctx.fill();
@@ -530,21 +537,21 @@ function drawCustomFinderPattern(ctx, startRow, startCol, modulePixelSize, offse
     } else {
         // Square (traditional) - draw as squares
         // Outer square (7x7)
-        ctx.fillStyle = darkColor;
+        ctx.fillStyle = outerColor;
         const outerX = offsetPixels + (startCol * modulePixelSize);
         const outerY = offsetPixels + (startRow * modulePixelSize);
         const outerSize = 7 * modulePixelSize;
         ctx.fillRect(outerX, outerY, outerSize, outerSize);
 
         // Middle square (5x5)
-        ctx.fillStyle = lightColor;
+        ctx.fillStyle = middleColor;
         const middleX = offsetPixels + ((startCol + 1) * modulePixelSize);
         const middleY = offsetPixels + ((startRow + 1) * modulePixelSize);
         const middleSize = 5 * modulePixelSize;
         ctx.fillRect(middleX, middleY, middleSize, middleSize);
 
         // Inner square (3x3)
-        ctx.fillStyle = darkColor;
+        ctx.fillStyle = centerColor;
         const innerX = offsetPixels + ((startCol + 2) * modulePixelSize);
         const innerY = offsetPixels + ((startRow + 2) * modulePixelSize);
         const innerSize = 3 * modulePixelSize;
@@ -672,20 +679,10 @@ function renderSizeColorQR() {
 
     const sizeFraction = sizeColorState.moduleSize / 100;
 
-    // Get finder pattern colors
-    let finderDarkColor, finderLightColor;
-    if (sizeColorState.colorMode === 'palette' || sizeColorState.colorMode === 'gradient') {
-        if (sizeColorState.logoImg && sizeColorState.darkPalette && sizeColorState.lightPalette) {
-            finderDarkColor = sizeColorState.darkPalette[0];
-            finderLightColor = sizeColorState.lightPalette[0];
-        } else {
-            finderDarkColor = '#000000';
-            finderLightColor = '#ffffff';
-        }
-    } else {
-        finderDarkColor = '#000000';
-        finderLightColor = '#ffffff';
-    }
+    // Get finder pattern colors from state
+    const finderOuterColor = sizeColorState.finderOuterColor;
+    const finderMiddleColor = sizeColorState.finderMiddleColor;
+    const finderCenterColor = sizeColorState.finderCenterColor;
 
     // Draw all modules (with quiet zone offset)
     for (let row = 0; row < size; row++) {
@@ -740,8 +737,8 @@ function renderSizeColorQR() {
             // Get color
             let color;
             if (isSeparator && sizeColorState.fullSizeSeparators && sizeColorState.finderShape !== 'rounded') {
-                // Full-size separators (non-rounded) use first palette colors (or default if no logo)
-                color = isDark ? finderDarkColor : finderLightColor;
+                // Full-size separators (non-rounded) use the middle (light) finder color
+                color = finderMiddleColor;
             } else {
                 // Regular modules and reduced separators use sampled/matched colors
                 const qrAreaSize = size * modulePixelSize;
@@ -758,13 +755,13 @@ function renderSizeColorQR() {
 
     // Draw custom finder patterns on top
     // Top-left (0,0)
-    drawCustomFinderPattern(ctx, 0, 0, modulePixelSize, offsetPixels, finderDarkColor, finderLightColor, sizeFraction, size);
+    drawCustomFinderPattern(ctx, 0, 0, modulePixelSize, offsetPixels, finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
 
     // Top-right (0, size-7)
-    drawCustomFinderPattern(ctx, 0, size - 7, modulePixelSize, offsetPixels, finderDarkColor, finderLightColor, sizeFraction, size);
+    drawCustomFinderPattern(ctx, 0, size - 7, modulePixelSize, offsetPixels, finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
 
     // Bottom-left (size-7, 0)
-    drawCustomFinderPattern(ctx, size - 7, 0, modulePixelSize, offsetPixels, finderDarkColor, finderLightColor, sizeFraction, size);
+    drawCustomFinderPattern(ctx, size - 7, 0, modulePixelSize, offsetPixels, finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
 }
 
 // ========== INITIALIZATION ==========
@@ -859,6 +856,20 @@ function initializeSizeColorEditor() {
         const finderShapeSelect = document.getElementById('finderShape');
         if (finderShapeSelect) {
             finderShapeSelect.value = sizeColorState.finderShape;
+        }
+
+        // Sync finder color inputs
+        const finderOuterInput = document.getElementById('finderOuterColor');
+        if (finderOuterInput) {
+            finderOuterInput.value = sizeColorState.finderOuterColor;
+        }
+        const finderMiddleInput = document.getElementById('finderMiddleColor');
+        if (finderMiddleInput) {
+            finderMiddleInput.value = sizeColorState.finderMiddleColor;
+        }
+        const finderCenterInput = document.getElementById('finderCenterColor');
+        if (finderCenterInput) {
+            finderCenterInput.value = sizeColorState.finderCenterColor;
         }
 
         // Show/hide appropriate controls based on color mode

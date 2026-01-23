@@ -474,8 +474,302 @@ function getLogoBlendColor(canvasX, canvasY, isDark, canvasSize) {
 }
 
 /**
+ * Get the desired color (dark/light) for ALL modules based on the logo
+ * Returns a Map: cellKey -> boolean (true=dark, false=light)
+ * Only includes modules that are inside the logo (not outside/transparent)
+ */
+function getDesiredLogoColors(moduleSize, canvasSize, matrixSize) {
+    const desiredValues = new Map();
+
+    for (let row = 0; row < matrixSize; row++) {
+        for (let col = 0; col < matrixSize; col++) {
+            const canvasX = (col + 0.5) * moduleSize;
+            const canvasY = (row + 0.5) * moduleSize;
+
+            const sampledRgb = sampleLogoAtPosition(canvasX, canvasY, canvasSize);
+
+            if (!sampledRgb) {
+                // Outside logo - skip
+                continue;
+            }
+
+            const alpha = sampledRgb[3];
+            if (alpha < 128) {
+                // Transparent pixel - skip
+                continue;
+            }
+
+            // Determine if the logo wants this to be dark or light
+            const sampledLuminance = 0.299 * sampledRgb[0] + 0.587 * sampledRgb[1] + 0.114 * sampledRgb[2];
+            const wantsDark = sampledLuminance < 128;
+
+            desiredValues.set(`${row},${col}`, wantsDark);
+        }
+    }
+
+    return desiredValues;
+}
+
+/**
+ * Count how many modules in a matrix match the desired logo colors
+ */
+function countLogoMatches(matrix, desiredColors) {
+    let matches = 0;
+
+    desiredColors.forEach((wantsDark, cellKey) => {
+        const [row, col] = cellKey.split(',').map(Number);
+        const moduleValue = Boolean(matrix[row][col]);
+
+        if (moduleValue === wantsDark) {
+            matches++;
+        }
+    });
+
+    return matches;
+}
+
+/**
+ * Simulate applying a mask, updating padding to match logo, recalculating ECC,
+ * and count how many modules match the logo.
+ *
+ * Order: raw data → apply mask → update padding → recalculate ECC → count matches
+ */
+function simulateMaskWithLogoBlend(maskPattern, desiredColors, moduleSize, canvasSize) {
+    const version = currentVersion;
+    const eccLevel = currentEccLevel;
+    const size = 21 + (version - 1) * 4;
+
+    // Save original dataBytes
+    const originalDataBytes = [...encodedBitstream.dataBytes];
+
+    // Step 1: Create raw unmasked matrix from original data
+    const interleaved = interleaveBlocks(encodedBitstream.blocks);
+    let testMatrix = createMatrix(size);
+    placeFunctionPatterns(testMatrix, version);
+    placeDataBits(testMatrix, interleaved);
+
+    // Step 2: Apply the test mask
+    applyMask(testMatrix, maskPattern, version);
+    placeFormatInfo(testMatrix, eccLevel, maskPattern, version);
+    if (version >= 7) {
+        placeVersionInfo(testMatrix, version);
+    }
+
+    // Step 3: Determine padding edits to match logo (on the masked matrix)
+    const testPaddingEdits = new Map();
+
+    editableCells.forEach(cellKey => {
+        const [row, col] = cellKey.split(',').map(Number);
+        const canvasX = (col + 0.5) * moduleSize;
+        const canvasY = (row + 0.5) * moduleSize;
+
+        const sampledRgb = sampleLogoAtPosition(canvasX, canvasY, canvasSize);
+
+        let moduleValue;
+        if (!sampledRgb || sampledRgb[3] < 128) {
+            // Outside logo or transparent - keep current masked value
+            moduleValue = Boolean(testMatrix[row][col]);
+        } else {
+            // Match logo luminance
+            const sampledLuminance = 0.299 * sampledRgb[0] + 0.587 * sampledRgb[1] + 0.114 * sampledRgb[2];
+            moduleValue = sampledLuminance < 128; // true = dark
+        }
+
+        testPaddingEdits.set(cellKey, moduleValue);
+    });
+
+    // Step 4: Convert padding edits to unmasked bytes
+    const newPaddingBytes = convertPaddingEditsToBytes(testPaddingEdits, maskPattern);
+
+    // Step 5: Update dataBytes with new padding
+    const messageBits = encodedBitstream.modeIndicator.length +
+                       encodedBitstream.charCount.length +
+                       encodedBitstream.messageData.length +
+                       encodedBitstream.terminator.length +
+                       encodedBitstream.bytePadding.length;
+    const messageBytes = Math.ceil(messageBits / 8);
+
+    const testDataBytes = [...originalDataBytes];
+    newPaddingBytes.forEach((byte, idx) => {
+        testDataBytes[messageBytes + idx] = byte;
+    });
+
+    // Step 6: Recalculate ECC with new padding
+    const testBlocks = splitIntoBlocks(testDataBytes, version, eccLevel, blockSizeTable);
+    calculateEccForBlocks(testBlocks);
+
+    // Step 7: Regenerate matrix with new data+ECC
+    const newInterleaved = interleaveBlocks(testBlocks);
+    testMatrix = createMatrix(size);
+    placeFunctionPatterns(testMatrix, version);
+    placeDataBits(testMatrix, newInterleaved);
+
+    // Step 8: Apply the mask again
+    applyMask(testMatrix, maskPattern, version);
+    placeFormatInfo(testMatrix, eccLevel, maskPattern, version);
+    if (version >= 7) {
+        placeVersionInfo(testMatrix, version);
+    }
+
+    // Step 9: Count how many modules match the logo
+    const matches = countLogoMatches(testMatrix, desiredColors);
+
+    return {
+        matches: matches,
+        paddingBytes: newPaddingBytes,
+        paddingEdits: testPaddingEdits
+    };
+}
+
+/**
+ * Convert padding edits (displayed/masked values) to unmasked byte values
+ */
+function convertPaddingEditsToBytes(edits, maskPattern) {
+    const newPaddingBytes = [...originalPaddingBytes];
+
+    paddingModuleMap.forEach((modules, padByteIdx) => {
+        // Check if this byte has any edited modules
+        const hasEdits = modules.some(module => {
+            const cellKey = `${module.row},${module.col}`;
+            return edits.has(cellKey);
+        });
+
+        if (!hasEdits) {
+            return; // Keep original value
+        }
+
+        const bits = new Array(8).fill(0);
+
+        modules.forEach((module) => {
+            const cellKey = `${module.row},${module.col}`;
+
+            let bitValue;
+            if (edits.has(cellKey)) {
+                // This is the masked (displayed) value we want
+                const maskedValue = edits.get(cellKey);
+                const shouldFlip = shouldFlipModule(module.row, module.col, maskPattern);
+                // Unmask to get the raw bit value
+                bitValue = shouldFlip ? !maskedValue : maskedValue;
+            } else {
+                // Use original bit value
+                const originalByte = originalPaddingBytes[padByteIdx];
+                const bitInByte = (originalByte >> (7 - module.bitOffset)) & 1;
+                bitValue = bitInByte === 1;
+            }
+
+            bits[module.bitOffset] = bitValue ? 1 : 0;
+        });
+
+        // Convert bits to byte
+        let byteValue = 0;
+        for (let i = 0; i < 8; i++) {
+            byteValue = (byteValue << 1) | bits[i];
+        }
+        newPaddingBytes[padByteIdx] = byteValue;
+    });
+
+    return newPaddingBytes;
+}
+
+/**
+ * Test all 8 mask patterns and find the one that best matches the logo colors
+ * after applying padding edits and recalculating ECC.
+ *
+ * Order for each mask: raw data → apply mask → update padding → recalculate ECC → count matches
+ */
+function findBestMaskForLogo() {
+    if (!logoBlendState.logoImg || !encodedBitstream || !encodedBitstream.blocks || !currentMatrix) {
+        return null;
+    }
+
+    if (!paddingModuleMap || !editableCells || editableCells.size === 0) {
+        return null;
+    }
+
+    const moduleSize = parseInt(document.getElementById('moduleScale').value);
+    const size = currentMatrix.length;
+    const canvasSize = size * moduleSize;
+
+    // Get desired colors for ALL modules based on logo
+    const desiredColors = getDesiredLogoColors(moduleSize, canvasSize, size);
+
+    // If no modules are inside the logo, no point in optimizing
+    if (desiredColors.size === 0) {
+        return null;
+    }
+
+    const scores = [];
+    let bestResult = null;
+
+    // For each mask pattern 0-7, simulate the full pipeline
+    for (let maskPattern = 0; maskPattern < 8; maskPattern++) {
+        const result = simulateMaskWithLogoBlend(maskPattern, desiredColors, moduleSize, canvasSize);
+
+        const score = {
+            mask: maskPattern,
+            matches: result.matches,
+            total: desiredColors.size,
+            percentage: Math.round((result.matches / desiredColors.size) * 100),
+            paddingBytes: result.paddingBytes,
+            paddingEdits: result.paddingEdits
+        };
+
+        scores.push(score);
+
+        if (!bestResult || result.matches > bestResult.matches) {
+            bestResult = score;
+        }
+    }
+
+    return {
+        bestMask: bestResult.mask,
+        bestMatches: bestResult.matches,
+        bestPaddingBytes: bestResult.paddingBytes,
+        bestPaddingEdits: bestResult.paddingEdits,
+        total: desiredColors.size,
+        scores: scores
+    };
+}
+
+/**
+ * Display the mask optimization scores in the UI
+ */
+function displayMaskScores(result, selectedMask) {
+    const statusDiv = document.getElementById('logoBlendStatus');
+    if (!statusDiv || !result) return;
+
+    // Build the scores table
+    let scoresHtml = '<div style="margin-top: 8px; font-size: 11px;">';
+    scoresHtml += '<strong>Mask Pattern Scores:</strong><br>';
+    scoresHtml += '<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px; margin-top: 4px;">';
+
+    result.scores.forEach(score => {
+        const isSelected = score.mask === selectedMask;
+        const isBest = score.mask === result.bestMask;
+        const bgColor = isSelected ? '#c8e6c9' : (isBest ? '#fff3e0' : '#f5f5f5');
+        const border = isSelected ? '2px solid #4caf50' : (isBest ? '2px solid #ff9800' : '1px solid #ddd');
+
+        scoresHtml += `<div style="padding: 4px; background: ${bgColor}; border: ${border}; border-radius: 3px; text-align: center;">`;
+        scoresHtml += `<div style="font-weight: bold;">Mask ${score.mask}</div>`;
+        scoresHtml += `<div>${score.matches}/${score.total}</div>`;
+        scoresHtml += `<div style="color: #666;">${score.percentage}%</div>`;
+        scoresHtml += '</div>';
+    });
+
+    scoresHtml += '</div>';
+    scoresHtml += '<div style="margin-top: 6px; font-size: 10px; color: #666;">';
+    scoresHtml += '<span style="display: inline-block; width: 12px; height: 12px; background: #c8e6c9; border: 2px solid #4caf50; vertical-align: middle; margin-right: 4px;"></span>Selected ';
+    scoresHtml += '<span style="display: inline-block; width: 12px; height: 12px; background: #fff3e0; border: 2px solid #ff9800; vertical-align: middle; margin-left: 8px; margin-right: 4px;"></span>Best match';
+    scoresHtml += '</div></div>';
+
+    return scoresHtml;
+}
+
+/**
  * Apply logo blend to all padding modules
- * This modifies paddingEdits map to set colors based on logo
+ * Tests all 8 mask patterns, simulates the full pipeline for each, and picks the best.
+ *
+ * For each mask: raw data → apply mask → update padding → recalculate ECC → count matches
  */
 function applyLogoBlendToPadding() {
     if (!logoBlendState.logoImg) {
@@ -494,108 +788,74 @@ function applyLogoBlendToPadding() {
         return;
     }
 
-    const moduleSize = parseInt(document.getElementById('moduleScale').value);
-    const size = originalMatrix.length;
-    const canvasSize = size * moduleSize; // Actual canvas size
+    // Find the best mask pattern by simulating all 8
+    const maskResult = findBestMaskForLogo();
 
-    let paddingCount = 0;
-    let changedCount = 0;
+    if (!maskResult) {
+        showLogoBlendStatus('Could not optimize mask - no modules inside logo area.', 'error');
+        return;
+    }
 
-    console.log(`Starting logo blend: ${editableCells.size} padding modules`);
-    console.log(`Canvas size: ${canvasSize}x${canvasSize}, Module size: ${moduleSize}px`);
-    console.log(`Matrix size: ${size}x${size} modules`);
+    const selectedMask = maskResult.bestMask;
+    const currentMask = parseInt(document.getElementById('maskPatternSelect')?.value || 0);
 
-    let debugCount = 0;
+    console.log(`Mask optimization complete: best=${selectedMask} (${maskResult.bestMatches}/${maskResult.total} matches)`);
+    console.log(`Scores: ${maskResult.scores.map(s => `M${s.mask}:${s.matches}`).join(', ')}`);
 
-    // For each editable (padding) cell, determine color from logo
-    editableCells.forEach(cellKey => {
-        const [row, col] = cellKey.split(',').map(Number);
+    // Update the mask dropdown
+    const maskSelect = document.getElementById('maskPatternSelect');
+    if (maskSelect) {
+        maskSelect.value = selectedMask;
+    }
 
-        // Calculate module CENTER position on actual canvas
-        const canvasX = (col + 0.5) * moduleSize;
-        const canvasY = (row + 0.5) * moduleSize;
-
-        // Debug first module with full details
-        const isFirstModule = debugCount === 0;
-
-        // Sample the logo directly (don't use current QR value to constrain)
-        const sampledRgb = sampleLogoAtPosition(canvasX, canvasY, canvasSize, isFirstModule);
-
-        let moduleValue;
-
-        if (!sampledRgb) {
-            // Module is outside logo - keep current value
-            moduleValue = Boolean(currentMatrix[row][col]);
-        } else {
-            // Module is inside logo - determine color from logo
-            // Calculate sampled luminance
-            const sampledLuminance = 0.299 * sampledRgb[0] + 0.587 * sampledRgb[1] + 0.114 * sampledRgb[2];
-
-            if (logoBlendState.colorMode === 'gradient') {
-                // Gradient mode: sample logo color, adjust brightness for readability
-                const hsl = rgbToHsl(sampledRgb[0], sampledRgb[1], sampledRgb[2]);
-
-                // Decide if this should be dark or light based on logo luminosity
-                // Use a simple threshold for grayscale images
-                const logoIsDark = sampledLuminance < 128;
-
-                if (logoIsDark) {
-                    // Make sure it's dark enough to be black
-                    if (hsl.l > logoBlendState.darkMaxLuminosity) {
-                        hsl.l = logoBlendState.darkMaxLuminosity;
-                    }
-                    // For grayscale, this will already be dark
-                } else {
-                    // Make sure it's light enough to be white
-                    if (hsl.l < logoBlendState.lightMinLuminosity) {
-                        hsl.l = logoBlendState.lightMinLuminosity;
-                    }
-                    // For grayscale, this will already be light
-                }
-
-                const rgb = hslToRgb(hsl.h, hsl.s, hsl.l);
-                const finalLuminance = 0.299 * rgb.r + 0.587 * rgb.g + 0.114 * rgb.b;
-                moduleValue = finalLuminance < 128;
-            } else {
-                // Palette mode: for grayscale logos, use simple luminance threshold
-                // This is more reliable than color matching for B&W logos
-                moduleValue = sampledLuminance < 128;
-            }
-        }
-
-        // Convert current matrix value to boolean for comparison
-        const currentValue = Boolean(currentMatrix[row][col]);
-
-        paddingCount++;
-
-        // Debug first few modules with detailed decision info
-        if (debugCount < 10) {
-            let decisionLog = `Module [${row},${col}] at canvas (${canvasX.toFixed(1)}, ${canvasY.toFixed(1)}): `;
-            if (!sampledRgb) {
-                decisionLog += 'OUTSIDE logo -> kept current=' + currentValue;
-            } else {
-                const sampledLum = 0.299 * sampledRgb[0] + 0.587 * sampledRgb[1] + 0.114 * sampledRgb[2];
-                decisionLog += `sampled RGB(${sampledRgb.join(',')}) lum=${sampledLum.toFixed(1)} -> ${moduleValue ? 'BLACK' : 'WHITE'} (was ${currentValue ? 'BLACK' : 'WHITE'})`;
-            }
-            console.log(decisionLog);
-            debugCount++;
-        }
-
-        // Always set the value to ensure it's in paddingEdits
-        paddingEdits.set(cellKey, moduleValue);
-
-        // Track changes - use boolean comparison
-        if (currentValue !== moduleValue) {
-            changedCount++;
-        }
+    // Apply the pre-computed padding edits from the best mask simulation
+    paddingEdits.clear();
+    maskResult.bestPaddingEdits.forEach((value, key) => {
+        paddingEdits.set(key, value);
     });
 
-    console.log(`Applied logo blend to ${paddingCount} modules, ${changedCount} changed`);
+    // Update the padding bytes in encodedBitstream
+    const messageBits = encodedBitstream.modeIndicator.length +
+                       encodedBitstream.charCount.length +
+                       encodedBitstream.messageData.length +
+                       encodedBitstream.terminator.length +
+                       encodedBitstream.bytePadding.length;
+    const messageBytes = Math.ceil(messageBits / 8);
 
-    if (changedCount === 0) {
-        showLogoBlendStatus(`Analyzed ${paddingCount} padding modules. No changes needed (already matching logo).`, 'info');
-    } else {
-        showLogoBlendStatus(`✓ Applied logo blend: ${changedCount} of ${paddingCount} padding modules changed to match logo.`, 'success');
+    maskResult.bestPaddingBytes.forEach((byte, idx) => {
+        encodedBitstream.dataBytes[messageBytes + idx] = byte;
+    });
+    encodedBitstream.padBytes = [...maskResult.bestPaddingBytes];
+
+    // Recalculate ECC with the new padding
+    const blocks = splitIntoBlocks(encodedBitstream.dataBytes, currentVersion, currentEccLevel, blockSizeTable);
+    calculateEccForBlocks(blocks);
+    encodedBitstream.blocks = blocks;
+
+    // Regenerate matrix with new data+ECC and the best mask
+    const interleaved = interleaveBlocks(blocks);
+    const size = 21 + (currentVersion - 1) * 4;
+    currentMatrix = createMatrix(size);
+    placeFunctionPatterns(currentMatrix, currentVersion);
+    placeDataBits(currentMatrix, interleaved);
+    applyMask(currentMatrix, selectedMask, currentVersion);
+    placeFormatInfo(currentMatrix, currentEccLevel, selectedMask, currentVersion);
+    if (currentVersion >= 7) {
+        placeVersionInfo(currentMatrix, currentVersion);
+    }
+
+    // Update originalMatrix
+    originalMatrix = currentMatrix.map(row => [...row]);
+
+    // Build status message
+    const statusMessage = `✓ Applied logo blend using mask ${selectedMask} (${maskResult.bestMatches}/${maskResult.total} modules match logo).`;
+
+    showLogoBlendStatus(statusMessage, 'success');
+
+    // Append mask scores to the status
+    const statusDiv = document.getElementById('logoBlendStatus');
+    if (statusDiv) {
+        statusDiv.innerHTML += displayMaskScores(maskResult, selectedMask);
     }
 
     // Re-render the grid
@@ -603,13 +863,13 @@ function applyLogoBlendToPadding() {
         renderPaddingGrid();
     }
 
-    // Update QR code with debounce
-    if (typeof updateQRFromPaddingEdits === 'function') {
-        if (typeof paintUpdateTimeout !== 'undefined') {
-            clearTimeout(paintUpdateTimeout);
-        }
-        setTimeout(() => {
-            updateQRFromPaddingEdits();
-        }, 100);
+    // Render the main QR code
+    if (typeof renderQrCode === 'function') {
+        renderQrCode(currentMatrix);
+    }
+
+    // Refresh encode tab displays
+    if (typeof refreshEncodeTabDisplays === 'function') {
+        refreshEncodeTabDisplays();
     }
 }

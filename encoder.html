@@ -521,6 +521,12 @@
                         <option value="hybrid-inverse">Hybrid (Square Outer + Circle Center)</option>
                     </select>
                     <div style="font-size: 11px; color: #666; margin-top: 4px;">Shape style for the three corner finder patterns</div>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
+                        <span style="font-size: 11px; color: #666;">Colors:</span>
+                        <input type="color" id="finderOuterColor" value="#000000" style="width: 28px; height: 24px; cursor: pointer; border: 1px solid #999; border-radius: 3px; padding: 0;" title="Outer (dark)">
+                        <input type="color" id="finderMiddleColor" value="#ffffff" style="width: 28px; height: 24px; cursor: pointer; border: 1px solid #999; border-radius: 3px; padding: 0;" title="Middle (light)">
+                        <input type="color" id="finderCenterColor" value="#000000" style="width: 28px; height: 24px; cursor: pointer; border: 1px solid #999; border-radius: 3px; padding: 0;" title="Center (dark)">
+                    </div>
                 </div>
 
                 <div class="control-group">
@@ -529,33 +535,6 @@
                         <span>Full-sized separators</span>
                     </label>
                     <div style="font-size: 11px; color: #666; margin-top: 4px;">Test option: Keep separator modules at 100% size for faster scanning</div>
-                </div>
-            </div>
-
-            <div class="controls">
-                <h3 style="margin-top: 0;">Background Logo</h3>
-                <div class="control-group">
-                    <label for="sizeColorLogoUpload">Logo Image:</label>
-                    <input type="file" id="sizeColorLogoUpload" accept="image/*" style="width: 100%; padding: 5px; font-size: 12px;">
-                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Upload an image to display behind the QR code</div>
-                    <div id="sizeColorLogoPreview" style="display: none; margin-top: 8px; text-align: center;">
-                        <img id="sizeColorLogoPreviewImg" style="max-width: 100%; max-height: 150px; border: 1px solid #ddd; border-radius: 4px;">
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <label>Logo Scale: <span id="sizeColorLogoScaleLabel">100</span>%</label>
-                    <input type="range" id="sizeColorLogoScale" min="50" max="150" value="100" style="width: 100%;">
-                </div>
-
-                <div class="control-group">
-                    <label>Logo Position X: <span id="sizeColorLogoXLabel">50</span>%</label>
-                    <input type="range" id="sizeColorLogoX" min="0" max="100" value="50" style="width: 100%;">
-                </div>
-
-                <div class="control-group">
-                    <label>Logo Position Y: <span id="sizeColorLogoYLabel">50</span>%</label>
-                    <input type="range" id="sizeColorLogoY" min="0" max="100" value="50" style="width: 100%;">
                 </div>
             </div>
 
@@ -584,7 +563,7 @@
 
                 <div id="sizeColorGradientControls" style="display: none;">
                     <div style="font-size: 11px; color: #666; margin-bottom: 8px; padding: 6px; background: #f0f8ff; border-left: 3px solid #4a9eff; border-radius: 3px;">
-                        <strong>Gradient Mode:</strong> Each module samples the logo color at its center position and adjusts brightness for scannability. Finder patterns use the first extracted palette colors.
+                        <strong>Gradient Mode:</strong> Each module samples the logo color at its center position and adjusts brightness for scannability.
                     </div>
                     <div class="control-group">
                         <label>Dark Max Luminosity: <span id="sizeColorDarkLumLabel">33</span>%</label>
@@ -606,11 +585,10 @@
                     <div style="display: flex; gap: 4px; margin-bottom: 4px;">
                         <div style="width: 25%; text-align: center;">
                             <input type="color" id="sizeColorDarkColor0" class="palette-color-picker" data-type="dark" data-index="0" style="width: 100%; height: 30px; cursor: pointer; border: 1px solid #999; border-radius: 3px;">
-                            <div style="font-size: 9px; color: #4a9eff; margin-top: 2px;">Finder</div>
+                            <div style="font-size: 9px; color: #4a9eff; margin-top: 2px;">Background</div>
                         </div>
                         <div style="width: 25%; text-align: center;">
                             <input type="color" id="sizeColorDarkColor1" class="palette-color-picker" data-type="dark" data-index="1" style="width: 100%; height: 30px; cursor: pointer; border: 1px solid #999; border-radius: 3px;">
-                            <div style="font-size: 9px; color: #4a9eff; margin-top: 2px;">Background</div>
                         </div>
                         <div style="width: 25%; text-align: center;">
                             <input type="color" id="sizeColorDarkColor2" class="palette-color-picker" data-type="dark" data-index="2" style="width: 100%; height: 30px; cursor: pointer; border: 1px solid #999; border-radius: 3px;">
@@ -623,11 +601,10 @@
                     <div style="display: flex; gap: 4px;">
                         <div style="width: 25%; text-align: center;">
                             <input type="color" id="sizeColorLightColor0" class="palette-color-picker" data-type="light" data-index="0" style="width: 100%; height: 30px; cursor: pointer; border: 1px solid #999; border-radius: 3px;">
-                            <div style="font-size: 9px; color: #4a9eff; margin-top: 2px;">Finder</div>
+                            <div style="font-size: 9px; color: #4a9eff; margin-top: 2px;">Background</div>
                         </div>
                         <div style="width: 25%; text-align: center;">
                             <input type="color" id="sizeColorLightColor1" class="palette-color-picker" data-type="light" data-index="1" style="width: 100%; height: 30px; cursor: pointer; border: 1px solid #999; border-radius: 3px;">
-                            <div style="font-size: 9px; color: #4a9eff; margin-top: 2px;">Background</div>
                         </div>
                         <div style="width: 25%; text-align: center;">
                             <input type="color" id="sizeColorLightColor2" class="palette-color-picker" data-type="light" data-index="2" style="width: 100%; height: 30px; cursor: pointer; border: 1px solid #999; border-radius: 3px;">
@@ -636,7 +613,34 @@
                             <input type="color" id="sizeColorLightColor3" class="palette-color-picker" data-type="light" data-index="3" style="width: 100%; height: 30px; cursor: pointer; border: 1px solid #999; border-radius: 3px;">
                         </div>
                     </div>
-                    <div style="font-size: 10px; color: #666; margin-top: 8px;">1st color: Finder patterns | 2nd color: Background/outside logo | 3rd-4th: Matched to logo</div>
+                    <div style="font-size: 10px; color: #666; margin-top: 8px;">1st color: Background/outside logo | 2nd-4th: Matched to logo</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <h3 style="margin-top: 0;">Background Logo</h3>
+                <div class="control-group">
+                    <label for="sizeColorLogoUpload">Logo Image:</label>
+                    <input type="file" id="sizeColorLogoUpload" accept="image/*" style="width: 100%; padding: 5px; font-size: 12px;">
+                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Upload an image to display behind the QR code</div>
+                    <div id="sizeColorLogoPreview" style="display: none; margin-top: 8px; text-align: center;">
+                        <img id="sizeColorLogoPreviewImg" style="max-width: 100%; max-height: 150px; border: 1px solid #ddd; border-radius: 4px;">
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label>Logo Scale: <span id="sizeColorLogoScaleLabel">100</span>%</label>
+                    <input type="range" id="sizeColorLogoScale" min="50" max="150" value="100" style="width: 100%;">
+                </div>
+
+                <div class="control-group">
+                    <label>Logo Position X: <span id="sizeColorLogoXLabel">50</span>%</label>
+                    <input type="range" id="sizeColorLogoX" min="0" max="100" value="50" style="width: 100%;">
+                </div>
+
+                <div class="control-group">
+                    <label>Logo Position Y: <span id="sizeColorLogoYLabel">50</span>%</label>
+                    <input type="range" id="sizeColorLogoY" min="0" max="100" value="50" style="width: 100%;">
                 </div>
             </div>
 
@@ -900,6 +904,21 @@
 
         document.getElementById('finderShape')?.addEventListener('change', function(e) {
             sizeColorState.finderShape = e.target.value;
+            renderSizeColorQR();
+        });
+
+        document.getElementById('finderOuterColor')?.addEventListener('input', function(e) {
+            sizeColorState.finderOuterColor = e.target.value;
+            renderSizeColorQR();
+        });
+
+        document.getElementById('finderMiddleColor')?.addEventListener('input', function(e) {
+            sizeColorState.finderMiddleColor = e.target.value;
+            renderSizeColorQR();
+        });
+
+        document.getElementById('finderCenterColor')?.addEventListener('input', function(e) {
+            sizeColorState.finderCenterColor = e.target.value;
             renderSizeColorQR();
         });
 

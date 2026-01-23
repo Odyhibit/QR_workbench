@@ -245,20 +245,10 @@ function renderDeleteCanvas() {
         ctx.restore();
     }
 
-    // Get finder pattern colors
-    let finderDarkColor, finderLightColor;
-    if (sizeColorState.colorMode === 'palette' || sizeColorState.colorMode === 'gradient') {
-        if (sizeColorState.logoImg && sizeColorState.darkPalette && sizeColorState.lightPalette) {
-            finderDarkColor = sizeColorState.darkPalette[0];
-            finderLightColor = sizeColorState.lightPalette[0];
-        } else {
-            finderDarkColor = '#000000';
-            finderLightColor = '#ffffff';
-        }
-    } else {
-        finderDarkColor = '#000000';
-        finderLightColor = '#ffffff';
-    }
+    // Get finder pattern colors from state
+    const finderOuterColor = sizeColorState.finderOuterColor;
+    const finderMiddleColor = sizeColorState.finderMiddleColor;
+    const finderCenterColor = sizeColorState.finderCenterColor;
 
     // Draw all modules using Size & Color styling
     for (let row = 0; row < size; row++) {
@@ -305,7 +295,8 @@ function renderDeleteCanvas() {
 
             let color;
             if (isSeparator && sizeColorState.fullSizeSeparators && sizeColorState.finderShape !== 'rounded') {
-                color = isDark ? finderDarkColor : finderLightColor;
+                // Full-size separators use the middle (light) finder color
+                color = finderMiddleColor;
             } else {
                 const qrAreaSize = size * modulePixelSize;
                 color = typeof getSizeColorModuleColor === 'function'
@@ -327,9 +318,9 @@ function renderDeleteCanvas() {
 
     // Draw custom finder patterns
     if (typeof drawCustomFinderPattern === 'function') {
-        drawCustomFinderPattern(ctx, 0, 0, modulePixelSize, offsetPixels, finderDarkColor, finderLightColor, sizeFraction, size);
-        drawCustomFinderPattern(ctx, 0, size - 7, modulePixelSize, offsetPixels, finderDarkColor, finderLightColor, sizeFraction, size);
-        drawCustomFinderPattern(ctx, size - 7, 0, modulePixelSize, offsetPixels, finderDarkColor, finderLightColor, sizeFraction, size);
+        drawCustomFinderPattern(ctx, 0, 0, modulePixelSize, offsetPixels, finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
+        drawCustomFinderPattern(ctx, 0, size - 7, modulePixelSize, offsetPixels, finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
+        drawCustomFinderPattern(ctx, size - 7, 0, modulePixelSize, offsetPixels, finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
     }
 
     // Now overlay hover highlights only
