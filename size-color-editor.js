@@ -6,6 +6,7 @@ let sizeColorState = {
     logoImage: null,
     logoImg: null,
     logoImageData: null,
+    logoHasTransparency: false, // Whether the logo has transparent pixels
     moduleShape: 'square', // 'square', 'circle', 'rounded', 'diamond', 'cushion'
     moduleSize: 80, // percentage (20-100)
     logoScale: 100,
@@ -23,7 +24,11 @@ let sizeColorState = {
     // Finder pattern colors: outer dark, middle light, center dark
     finderOuterColor: '#000000',
     finderMiddleColor: '#ffffff',
-    finderCenterColor: '#000000'
+    finderCenterColor: '#000000',
+    // Background layer settings (for logos with transparency)
+    backgroundEnabled: true, // Whether to show background layer
+    backgroundModuleSize: 100, // percentage (100-200) - larger than foreground
+    backgroundModuleShape: 'square' // independent shape for background layer
 };
 
 // ========== LOGO HANDLING ==========
@@ -47,6 +52,10 @@ function loadSizeColorLogo(file, callback) {
             tempCtx.drawImage(img, 0, 0);
             sizeColorState.logoImageData = tempCtx.getImageData(0, 0, img.width, img.height);
 
+            // Detect transparency in the logo
+            sizeColorState.logoHasTransparency = detectLogoTransparency(sizeColorState.logoImageData);
+            updateBackgroundLayerVisibility();
+
             // Extract colors for palette mode if using logo-blend.js functions
             if (typeof extractDominantColors === 'function') {
                 const colors = extractDominantColors(img);
@@ -64,6 +73,30 @@ function loadSizeColorLogo(file, callback) {
         img.src = e.target.result;
     };
     reader.readAsDataURL(file);
+}
+
+/**
+ * Detect if an image has transparent pixels
+ */
+function detectLogoTransparency(imageData) {
+    const data = imageData.data;
+    // Sample every 16th pixel for performance
+    for (let i = 3; i < data.length; i += 64) {
+        if (data[i] < 250) { // Alpha channel less than ~98%
+            return true;
+        }
+    }
+    return false;
+}
+
+/**
+ * Show/hide background layer controls based on logo transparency
+ */
+function updateBackgroundLayerVisibility() {
+    const bgControls = document.getElementById('backgroundLayerControls');
+    if (bgControls) {
+        bgControls.style.display = sizeColorState.logoHasTransparency ? 'block' : 'none';
+    }
 }
 
 /**
@@ -645,7 +678,83 @@ function drawStyledModule(ctx, moduleX, moduleY, moduleWidth, moduleHeight, colo
 }
 
 /**
+ * Draw a layer of QR modules with specified size and shape
+ */
+function drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, sizeFraction, moduleShape, isBackground) {
+    const finderMiddleColor = sizeColorState.finderMiddleColor;
+    const qrAreaSize = size * modulePixelSize;
+
+    for (let row = 0; row < size; row++) {
+        for (let col = 0; col < size; col++) {
+            const isFinderOnly = isFinderPatternOnly(row, col, size);
+
+            // Skip finder patterns - drawn separately
+            if (isFinderOnly) continue;
+
+            // Check if this module is deleted (from Module Delete tab)
+            if (typeof deleteState !== 'undefined' && typeof getCodewordIndexForModule === 'function') {
+                const moduleKey = `${row},${col}`;
+                const codewordIndex = getCodewordIndexForModule(row, col);
+
+                const isDeleted = (deleteState.interactionMode === 'codeword' &&
+                                  codewordIndex !== null &&
+                                  deleteState.deletedCodewords.has(codewordIndex)) ||
+                                 (deleteState.interactionMode === 'module' &&
+                                  deleteState.deletedModules.has(moduleKey));
+
+                if (isDeleted) continue;
+            }
+
+            const isSeparator = isSeparatorModule(row, col, size);
+
+            // Skip separators if using rounded finders with full separators
+            if (isSeparator && sizeColorState.finderShape === 'rounded' && sizeColorState.fullSizeSeparators) {
+                continue;
+            }
+
+            const moduleX = offsetPixels + (col * modulePixelSize);
+            const moduleY = offsetPixels + (row * modulePixelSize);
+            const isDark = currentMatrix[row][col];
+
+            // Determine size and shape
+            let currentSizeFraction;
+            let currentShape;
+
+            if (isSeparator && sizeColorState.fullSizeSeparators && sizeColorState.finderShape !== 'rounded') {
+                currentSizeFraction = 1.0;
+                currentShape = 'square';
+            } else {
+                currentSizeFraction = sizeFraction;
+                currentShape = moduleShape;
+            }
+
+            // Get module center for color sampling
+            const moduleCenterX = (col * modulePixelSize) + modulePixelSize / 2;
+            const moduleCenterY = (row * modulePixelSize) + modulePixelSize / 2;
+
+            // Get color
+            let color;
+            if (isSeparator && sizeColorState.fullSizeSeparators && sizeColorState.finderShape !== 'rounded') {
+                color = finderMiddleColor;
+            } else if (isBackground) {
+                // Background layer uses leftmost palette color (position 0) like foreground
+                const palette = isDark ? sizeColorState.darkPalette : sizeColorState.lightPalette;
+                color = palette[0];
+            } else {
+                color = getSizeColorModuleColor(moduleCenterX, moduleCenterY, isDark, qrAreaSize);
+            }
+
+            const shouldRemoveGridLines = isSeparator && sizeColorState.fullSizeSeparators && sizeColorState.finderShape !== 'rounded';
+
+            drawStyledModule(ctx, moduleX, moduleY, modulePixelSize, modulePixelSize,
+                           color, currentShape, currentSizeFraction, shouldRemoveGridLines);
+        }
+    }
+}
+
+/**
  * Main render function for Size & Color editor
+ * Supports 3-layer compositing: background QR, logo, foreground QR
  */
 function renderSizeColorQR() {
     if (!currentMatrix) {
@@ -668,7 +777,28 @@ function renderSizeColorQR() {
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvasSize, canvasSize);
 
-    // Draw logo background (adjusted for quiet zone offset)
+    const sizeFraction = sizeColorState.moduleSize / 100;
+    const finderOuterColor = sizeColorState.finderOuterColor;
+    const finderMiddleColor = sizeColorState.finderMiddleColor;
+    const finderCenterColor = sizeColorState.finderCenterColor;
+
+    // LAYER 1: Background modules (when logo has transparency)
+    if (sizeColorState.logoImg && sizeColorState.logoHasTransparency) {
+
+        const bgSizeFraction = sizeColorState.backgroundModuleSize / 100;
+        drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, bgSizeFraction,
+                       sizeColorState.backgroundModuleShape, true);
+
+        // Draw finder patterns for background layer
+        drawCustomFinderPattern(ctx, 0, 0, modulePixelSize, offsetPixels,
+                               finderOuterColor, finderMiddleColor, finderCenterColor, bgSizeFraction, size);
+        drawCustomFinderPattern(ctx, 0, size - 7, modulePixelSize, offsetPixels,
+                               finderOuterColor, finderMiddleColor, finderCenterColor, bgSizeFraction, size);
+        drawCustomFinderPattern(ctx, size - 7, 0, modulePixelSize, offsetPixels,
+                               finderOuterColor, finderMiddleColor, finderCenterColor, bgSizeFraction, size);
+    }
+
+    // LAYER 2: Logo background (adjusted for quiet zone offset)
     if (sizeColorState.logoImg) {
         ctx.save();
         ctx.translate(offsetPixels, offsetPixels);
@@ -677,91 +807,17 @@ function renderSizeColorQR() {
         ctx.restore();
     }
 
-    const sizeFraction = sizeColorState.moduleSize / 100;
+    // LAYER 3: Foreground modules
+    drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, sizeFraction,
+                   sizeColorState.moduleShape, false);
 
-    // Get finder pattern colors from state
-    const finderOuterColor = sizeColorState.finderOuterColor;
-    const finderMiddleColor = sizeColorState.finderMiddleColor;
-    const finderCenterColor = sizeColorState.finderCenterColor;
-
-    // Draw all modules (with quiet zone offset)
-    for (let row = 0; row < size; row++) {
-        for (let col = 0; col < size; col++) {
-            const isFinderOnly = isFinderPatternOnly(row, col, size);
-
-            // Skip drawing individual modules within finder patterns - we'll draw them as complete shapes later
-            if (isFinderOnly) continue;
-
-            // Check if this module is deleted (from Module Delete tab)
-            if (typeof deleteState !== 'undefined' && typeof getCodewordIndexForModule === 'function') {
-                const moduleKey = `${row},${col}`;
-                const codewordIndex = getCodewordIndexForModule(row, col);
-
-                const isDeleted = (deleteState.interactionMode === 'codeword' &&
-                                  codewordIndex !== null &&
-                                  deleteState.deletedCodewords.has(codewordIndex)) ||
-                                 (deleteState.interactionMode === 'module' &&
-                                  deleteState.deletedModules.has(moduleKey));
-
-                if (isDeleted) continue; // Don't draw deleted modules
-            }
-
-            const isSeparator = isSeparatorModule(row, col, size);
-
-            // Skip separators if using rounded finders with full separators (drawn as part of finder)
-            if (isSeparator && sizeColorState.finderShape === 'rounded' && sizeColorState.fullSizeSeparators) {
-                continue;
-            }
-
-            const moduleX = offsetPixels + (col * modulePixelSize);
-            const moduleY = offsetPixels + (row * modulePixelSize);
-            const isDark = currentMatrix[row][col];
-
-            // Determine size and shape
-            let currentSizeFraction;
-            let currentShape;
-
-            if (isSeparator && sizeColorState.fullSizeSeparators && sizeColorState.finderShape !== 'rounded') {
-                // Full-size separators for non-rounded finders
-                currentSizeFraction = 1.0;
-                currentShape = 'square';
-            } else {
-                currentSizeFraction = sizeFraction;
-                currentShape = sizeColorState.moduleShape;
-            }
-
-            // Get module center for color sampling (relative to QR area, not canvas)
-            const moduleCenterX = (col * modulePixelSize) + modulePixelSize / 2;
-            const moduleCenterY = (row * modulePixelSize) + modulePixelSize / 2;
-
-            // Get color
-            let color;
-            if (isSeparator && sizeColorState.fullSizeSeparators && sizeColorState.finderShape !== 'rounded') {
-                // Full-size separators (non-rounded) use the middle (light) finder color
-                color = finderMiddleColor;
-            } else {
-                // Regular modules and reduced separators use sampled/matched colors
-                const qrAreaSize = size * modulePixelSize;
-                color = getSizeColorModuleColor(moduleCenterX, moduleCenterY, isDark, qrAreaSize);
-            }
-
-            // Remove grid lines for full-size separators (non-rounded)
-            const shouldRemoveGridLines = isSeparator && sizeColorState.fullSizeSeparators && sizeColorState.finderShape !== 'rounded';
-
-            drawStyledModule(ctx, moduleX, moduleY, modulePixelSize, modulePixelSize,
-                           color, currentShape, currentSizeFraction, shouldRemoveGridLines);
-        }
-    }
-
-    // Draw custom finder patterns on top
-    // Top-left (0,0)
-    drawCustomFinderPattern(ctx, 0, 0, modulePixelSize, offsetPixels, finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
-
-    // Top-right (0, size-7)
-    drawCustomFinderPattern(ctx, 0, size - 7, modulePixelSize, offsetPixels, finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
-
-    // Bottom-left (size-7, 0)
-    drawCustomFinderPattern(ctx, size - 7, 0, modulePixelSize, offsetPixels, finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
+    // Draw finder patterns for foreground layer on top
+    drawCustomFinderPattern(ctx, 0, 0, modulePixelSize, offsetPixels,
+                           finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
+    drawCustomFinderPattern(ctx, 0, size - 7, modulePixelSize, offsetPixels,
+                           finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
+    drawCustomFinderPattern(ctx, size - 7, 0, modulePixelSize, offsetPixels,
+                           finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
 }
 
 // ========== INITIALIZATION ==========
@@ -888,6 +944,27 @@ function initializeSizeColorEditor() {
             if (gradientControls) gradientControls.style.display = 'none';
             if (paletteDisplay) paletteDisplay.style.display = 'none';
         }
+
+        // Detect transparency in the copied logo
+        if (sizeColorState.logoImageData) {
+            sizeColorState.logoHasTransparency = detectLogoTransparency(sizeColorState.logoImageData);
+        }
+
+        // Sync background layer controls
+        const bgSizeSlider = document.getElementById('backgroundModuleSize');
+        const bgSizeLabel = document.getElementById('backgroundModuleSizeLabel');
+        if (bgSizeSlider && bgSizeLabel) {
+            bgSizeSlider.value = sizeColorState.backgroundModuleSize;
+            bgSizeLabel.textContent = sizeColorState.backgroundModuleSize;
+        }
+
+        const bgShapeSelect = document.getElementById('backgroundModuleShape');
+        if (bgShapeSelect) {
+            bgShapeSelect.value = sizeColorState.backgroundModuleShape;
+        }
+
+        // Show/hide background layer controls based on transparency
+        updateBackgroundLayerVisibility();
 
         // Show logo preview
         const previewImg = document.getElementById('sizeColorLogoPreviewImg');

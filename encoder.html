@@ -538,6 +538,31 @@
                 </div>
             </div>
 
+            <!-- Background Layer Controls - shown only when logo has transparency -->
+            <div id="backgroundLayerControls" class="controls" style="display: none;">
+                <h3 style="margin-top: 0;">Background Layer</h3>
+                <div style="font-size: 11px; color: #666; margin-bottom: 10px; padding: 6px; background: #f0fff0; border-left: 3px solid #4caf50; border-radius: 3px;">
+                    Your logo has transparency. Set background size larger than foreground to fill in behind transparent areas.
+                </div>
+
+                <div class="control-group">
+                    <label for="backgroundModuleSize">Background Module Size: <span id="backgroundModuleSizeLabel">100</span>%</label>
+                    <input type="range" id="backgroundModuleSize" min="20" max="100" value="100" step="5" style="width: 100%;">
+                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Set larger than foreground to show behind transparent areas</div>
+                </div>
+
+                <div class="control-group">
+                    <label>Background Module Shape:</label>
+                    <select id="backgroundModuleShape" style="width: 100%; padding: 5px;">
+                        <option value="square">Square</option>
+                        <option value="circle">Circle</option>
+                        <option value="rounded">Rounded Square</option>
+                        <option value="cushion">Cushion Cut</option>
+                        <option value="diamond">Diamond</option>
+                    </select>
+                </div>
+            </div>
+
             <div class="controls">
                 <h3 style="margin-top: 0;">Module Colors</h3>
                 <div class="control-group">
@@ -924,6 +949,18 @@
 
         document.getElementById('fullSizeSeparators')?.addEventListener('change', function(e) {
             sizeColorState.fullSizeSeparators = e.target.checked;
+            renderSizeColorQR();
+        });
+
+        // Background layer controls
+        document.getElementById('backgroundModuleSize')?.addEventListener('input', function(e) {
+            sizeColorState.backgroundModuleSize = parseInt(e.target.value);
+            document.getElementById('backgroundModuleSizeLabel').textContent = e.target.value;
+            renderSizeColorQR();
+        });
+
+        document.getElementById('backgroundModuleShape')?.addEventListener('change', function(e) {
+            sizeColorState.backgroundModuleShape = e.target.value;
             renderSizeColorQR();
         });
 
