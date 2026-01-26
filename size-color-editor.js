@@ -200,6 +200,27 @@ function drawSizeColorLogoBackground(ctx, canvasWidth, canvasHeight) {
     ctx.drawImage(img, logoX, logoY, logoWidth, logoHeight);
 }
 
+function getSizeColorQuietZoneColor() {
+    if (sizeColorState.transparentTreatment === 'dark') {
+        return sizeColorState.darkPalette[0] || '#000000';
+    }
+    if (sizeColorState.transparentTreatment === 'light') {
+        return sizeColorState.lightPalette[0] || '#ffffff';
+    }
+    return '#ffffff';
+}
+
+function drawSizeColorQuietZoneOverlay(ctx, canvasSize, modulePixelSize, quietZone, color) {
+    if (!quietZone || quietZone <= 0) return;
+
+    const quietZonePixels = quietZone * modulePixelSize;
+    ctx.fillStyle = color;
+    ctx.fillRect(0, 0, canvasSize, quietZonePixels);
+    ctx.fillRect(0, canvasSize - quietZonePixels, canvasSize, quietZonePixels);
+    ctx.fillRect(0, 0, quietZonePixels, canvasSize);
+    ctx.fillRect(canvasSize - quietZonePixels, 0, quietZonePixels, canvasSize);
+}
+
 /**
  * Sample logo color at specific canvas position
  */
@@ -775,9 +796,10 @@ function renderSizeColorQR() {
     const modulePixelSize = canvasSize / totalSize;
     const offsetPixels = quietZone * modulePixelSize;
     const qrAreaSize = size * modulePixelSize;
+    const quietZoneColor = getSizeColorQuietZoneColor();
 
-    // Clear canvas with white (quiet zone)
-    ctx.fillStyle = 'white';
+    // Clear canvas with quiet zone color
+    ctx.fillStyle = quietZoneColor;
     ctx.fillRect(0, 0, canvasSize, canvasSize);
 
     // STEP 1: Fill QR area with background color based on transparentTreatment
@@ -816,6 +838,9 @@ function renderSizeColorQR() {
         drawSizeColorLogoBackground(ctx, qrAreaSize, qrAreaSize);
         ctx.restore();
     }
+
+    // Re-apply quiet zone after logo to prevent bleed
+    drawSizeColorQuietZoneOverlay(ctx, canvasSize, modulePixelSize, quietZone, quietZoneColor);
 
     // STEP 4: Foreground modules layer
     drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, sizeFraction,

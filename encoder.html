@@ -175,6 +175,60 @@
     <div class="tab-content active" id="tab1">
         <div class="side-panel">
             <div class="controls">
+                <h3 style="margin-top: 0;">QR Settings</h3>
+
+                <div class="control-group">
+                    <label for="dataModeSelect">Data Mode:</label>
+                    <select id="dataModeSelect">
+                        <option value="numeric">Numeric</option>
+                        <option value="alphanumeric">Alphanumeric</option>
+                        <option value="byte" selected>Byte</option>
+                    </select>
+                    <div class="charset-info" id="charsetInfo">
+                        Allowed: Any characters (ISO-8859-1)
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label for="eccLevelSelect">Error Correction Level:</label>
+                    <select id="eccLevelSelect">
+                        <option value="L">L - Low (~7% correction)</option>
+                        <option value="M" selected>M - Medium (~15% correction)</option>
+                        <option value="Q">Q - Quartile (~25% correction)</option>
+                        <option value="H">H - High (~30% correction)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label for="versionSelect">Version:</label>
+                    <select id="versionSelect">
+                        <!-- Populated dynamically -->
+                    </select>
+                </div>
+            </div>
+
+            <div class="controls">
+                <h3 style="margin-top: 0;">Encode</h3>
+                <button class="mark-button" id="encodeButton" onclick="onEncodeBitstreamClick()">Encode Bitstream</button>
+                <p style="font-size: 12px; color: #666; margin-top: 10px;">This will generate the complete bitstream structure including mode, count, data, and padding.</p>
+            </div>
+
+            <div class="info-panel">
+                <h3>Message Analysis</h3>
+                <p><strong>Length:</strong> <span id="messageLength">0</span> characters</p>
+                <p><strong>Valid Characters:</strong> <span id="validCount">0</span></p>
+                <p><strong>Invalid Characters:</strong> <span id="invalidCount">0</span></p>
+                <p><strong>Selected Version:</strong> <span id="selectedVersion">-</span></p>
+                <p><strong>Capacity:</strong> <span id="versionCapacity">-</span></p>
+                <p><strong>Usage:</strong> <span id="capacityUsage">-</span></p>
+                <div id="validationMessage" class="validation-info success" style="display: none;">
+                    All characters are valid for the selected mode.
+                </div>
+            </div>
+        </div>
+
+        <div class="canvas-area">
+            <div class="controls">
                 <h3 style="margin-top: 0;">QR Code Type</h3>
 
                 <div class="qr-type-selector">
@@ -390,60 +444,6 @@
                 </div>
             </div>
 
-            <div class="controls">
-                <h3 style="margin-top: 0;">QR Settings</h3>
-
-                <div class="control-group">
-                    <label for="dataModeSelect">Data Mode:</label>
-                    <select id="dataModeSelect">
-                        <option value="numeric">Numeric</option>
-                        <option value="alphanumeric">Alphanumeric</option>
-                        <option value="byte" selected>Byte</option>
-                    </select>
-                    <div class="charset-info" id="charsetInfo">
-                        Allowed: Any characters (ISO-8859-1)
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <label for="eccLevelSelect">Error Correction Level:</label>
-                    <select id="eccLevelSelect">
-                        <option value="L">L - Low (~7% correction)</option>
-                        <option value="M" selected>M - Medium (~15% correction)</option>
-                        <option value="Q">Q - Quartile (~25% correction)</option>
-                        <option value="H">H - High (~30% correction)</option>
-                    </select>
-                </div>
-
-                <div class="control-group">
-                    <label for="versionSelect">Version:</label>
-                    <select id="versionSelect">
-                        <!-- Populated dynamically -->
-                    </select>
-                </div>
-            </div>
-
-            <div class="controls">
-                <h3 style="margin-top: 0;">Encode</h3>
-                <button class="mark-button" id="encodeButton" onclick="onEncodeBitstreamClick()">Encode Bitstream</button>
-                <p style="font-size: 12px; color: #666; margin-top: 10px;">This will generate the complete bitstream structure including mode, count, data, and padding.</p>
-            </div>
-
-            <div class="info-panel">
-                <h3>Message Analysis</h3>
-                <p><strong>Length:</strong> <span id="messageLength">0</span> characters</p>
-                <p><strong>Valid Characters:</strong> <span id="validCount">0</span></p>
-                <p><strong>Invalid Characters:</strong> <span id="invalidCount">0</span></p>
-                <p><strong>Selected Version:</strong> <span id="selectedVersion">-</span></p>
-                <p><strong>Capacity:</strong> <span id="versionCapacity">-</span></p>
-                <p><strong>Usage:</strong> <span id="capacityUsage">-</span></p>
-                <div id="validationMessage" class="validation-info success" style="display: none;">
-                    All characters are valid for the selected mode.
-                </div>
-            </div>
-        </div>
-
-        <div class="canvas-area">
             <div class="canvas-container">
                 <h2>Generated Output</h2>
                 <div style="margin-bottom: 10px; font-size: 12px; color: #666;">
