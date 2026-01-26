@@ -20,7 +20,7 @@ let sizeColorState = {
     quietZone: 2, // modules (0-4)
     fullSizeSeparators: false, // toggle for testing scan performance
     finderShape: 'square', // 'square', 'circle', 'hybrid', 'hybrid-inverse', 'rounded'
-    transparentTreatment: 'light', // 'light' or 'dark' - how to treat transparent/outside pixels
+    transparentTreatment: 'transparent', // 'transparent', 'light', or 'dark' - background fill for areas not covered by logo
     // Finder pattern colors: outer dark, middle light, center dark
     finderOuterColor: '#000000',
     finderMiddleColor: '#ffffff',
@@ -267,7 +267,8 @@ function getSizeColorModuleColor(canvasX, canvasY, isDark, canvasSize) {
 
     if (!sampledRgba) {
         // Outside logo - use transparentTreatment setting
-        const treatAsLight = sizeColorState.transparentTreatment === 'light';
+        // 'transparent' and 'light' both show light background, 'dark' shows dark
+        const treatAsLight = sizeColorState.transparentTreatment !== 'dark';
         if (sizeColorState.colorMode === 'palette') {
             // In palette mode, keep dark/light module intent but use background slot (position 0).
             const palette = isDark ? sizeColorState.darkPalette : sizeColorState.lightPalette;
@@ -281,7 +282,8 @@ function getSizeColorModuleColor(canvasX, canvasY, isDark, canvasSize) {
     const alpha = sampledRgba[3];
     if (alpha < 128) {
         // Transparent pixel - use transparentTreatment setting
-        const treatAsLight = sizeColorState.transparentTreatment === 'light';
+        // 'transparent' and 'light' both show light background, 'dark' shows dark
+        const treatAsLight = sizeColorState.transparentTreatment !== 'dark';
         if (sizeColorState.colorMode === 'palette') {
             const palette = isDark ? sizeColorState.darkPalette : sizeColorState.lightPalette;
             return palette[0];
@@ -754,7 +756,7 @@ function drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, sizeFraction,
 
 /**
  * Main render function for Size & Color editor
- * Supports 3-layer compositing: background QR, logo, foreground QR
+ * Draw order: background fill -> background modules -> logo -> foreground modules
  */
 function renderSizeColorQR() {
     if (!currentMatrix) {
@@ -772,19 +774,28 @@ function renderSizeColorQR() {
     const totalSize = size + (quietZone * 2);
     const modulePixelSize = canvasSize / totalSize;
     const offsetPixels = quietZone * modulePixelSize;
+    const qrAreaSize = size * modulePixelSize;
 
     // Clear canvas with white (quiet zone)
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+    // STEP 1: Fill QR area with background color based on transparentTreatment
+    if (sizeColorState.transparentTreatment !== 'transparent') {
+        const bgColor = sizeColorState.transparentTreatment === 'dark'
+            ? sizeColorState.darkPalette[0]
+            : sizeColorState.lightPalette[0];
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(offsetPixels, offsetPixels, qrAreaSize, qrAreaSize);
+    }
 
     const sizeFraction = sizeColorState.moduleSize / 100;
     const finderOuterColor = sizeColorState.finderOuterColor;
     const finderMiddleColor = sizeColorState.finderMiddleColor;
     const finderCenterColor = sizeColorState.finderCenterColor;
 
-    // LAYER 1: Background modules (when logo has transparency)
+    // STEP 2: Background modules layer (when logo has transparency)
     if (sizeColorState.logoImg && sizeColorState.logoHasTransparency) {
-
         const bgSizeFraction = sizeColorState.backgroundModuleSize / 100;
         drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, bgSizeFraction,
                        sizeColorState.backgroundModuleShape, true);
@@ -798,16 +809,15 @@ function renderSizeColorQR() {
                                finderOuterColor, finderMiddleColor, finderCenterColor, bgSizeFraction, size);
     }
 
-    // LAYER 2: Logo background (adjusted for quiet zone offset)
+    // STEP 3: Logo (sandwiched between module layers)
     if (sizeColorState.logoImg) {
         ctx.save();
         ctx.translate(offsetPixels, offsetPixels);
-        const qrAreaSize = size * modulePixelSize;
         drawSizeColorLogoBackground(ctx, qrAreaSize, qrAreaSize);
         ctx.restore();
     }
 
-    // LAYER 3: Foreground modules
+    // STEP 4: Foreground modules layer
     drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, sizeFraction,
                    sizeColorState.moduleShape, false);
 
@@ -832,7 +842,12 @@ function initializeSizeColorEditor() {
     }
 
     // Copy logo and settings from Padding Editor if available
-    if (typeof logoBlendState !== 'undefined' && logoBlendState.logoImg) {
+    // Only copy if the logo has changed (or no logo loaded yet in Size & Color)
+    const logoChanged = typeof logoBlendState !== 'undefined' &&
+                        logoBlendState.logoImg &&
+                        logoBlendState.logoImage !== sizeColorState.logoImage;
+
+    if (logoChanged) {
         // Copy logo data
         sizeColorState.logoImage = logoBlendState.logoImage;
         sizeColorState.logoImg = logoBlendState.logoImg;
@@ -855,28 +870,6 @@ function initializeSizeColorEditor() {
             sizeColorState.lightPalette = [...logoBlendState.lightPalette];
         }
 
-        // Update UI sliders to match
-        const scaleSlider = document.getElementById('sizeColorLogoScale');
-        const scaleLabel = document.getElementById('sizeColorLogoScaleLabel');
-        if (scaleSlider && scaleLabel) {
-            scaleSlider.value = sizeColorState.logoScale;
-            scaleLabel.textContent = sizeColorState.logoScale;
-        }
-
-        const xSlider = document.getElementById('sizeColorLogoX');
-        const xLabel = document.getElementById('sizeColorLogoXLabel');
-        if (xSlider && xLabel) {
-            xSlider.value = sizeColorState.logoX;
-            xLabel.textContent = sizeColorState.logoX;
-        }
-
-        const ySlider = document.getElementById('sizeColorLogoY');
-        const yLabel = document.getElementById('sizeColorLogoYLabel');
-        if (ySlider && yLabel) {
-            ySlider.value = sizeColorState.logoY;
-            yLabel.textContent = sizeColorState.logoY;
-        }
-
         // Update color mode dropdown and luminosity sliders
         const colorModeSelect = document.getElementById('sizeColorColorMode');
         if (colorModeSelect) {
@@ -897,83 +890,79 @@ function initializeSizeColorEditor() {
             lightLumLabel.textContent = sizeColorState.lightMinLuminosity;
         }
 
-        const quietZoneSlider = document.getElementById('sizeColorQuietZone');
-        const quietZoneLabel = document.getElementById('sizeColorQuietZoneLabel');
-        if (quietZoneSlider && quietZoneLabel) {
-            quietZoneSlider.value = sizeColorState.quietZone;
-            quietZoneLabel.textContent = sizeColorState.quietZone;
-        }
-
-        const fullSizeSepCheckbox = document.getElementById('fullSizeSeparators');
-        if (fullSizeSepCheckbox) {
-            fullSizeSepCheckbox.checked = sizeColorState.fullSizeSeparators;
-        }
-
-        const finderShapeSelect = document.getElementById('finderShape');
-        if (finderShapeSelect) {
-            finderShapeSelect.value = sizeColorState.finderShape;
-        }
-
-        // Sync finder color inputs
-        const finderOuterInput = document.getElementById('finderOuterColor');
-        if (finderOuterInput) {
-            finderOuterInput.value = sizeColorState.finderOuterColor;
-        }
-        const finderMiddleInput = document.getElementById('finderMiddleColor');
-        if (finderMiddleInput) {
-            finderMiddleInput.value = sizeColorState.finderMiddleColor;
-        }
-        const finderCenterInput = document.getElementById('finderCenterColor');
-        if (finderCenterInput) {
-            finderCenterInput.value = sizeColorState.finderCenterColor;
-        }
-
-        // Show/hide appropriate controls based on color mode
-        const gradientControls = document.getElementById('sizeColorGradientControls');
-        const paletteDisplay = document.getElementById('sizeColorPaletteDisplay');
-
-        if (sizeColorState.colorMode === 'gradient') {
-            if (gradientControls) gradientControls.style.display = 'block';
-            if (paletteDisplay) paletteDisplay.style.display = 'none';
-        } else if (sizeColorState.colorMode === 'palette') {
-            if (gradientControls) gradientControls.style.display = 'none';
-            if (paletteDisplay) {
-                displaySizeColorPalette();
-            }
-        } else {
-            if (gradientControls) gradientControls.style.display = 'none';
-            if (paletteDisplay) paletteDisplay.style.display = 'none';
-        }
-
         // Detect transparency in the copied logo
         if (sizeColorState.logoImageData) {
             sizeColorState.logoHasTransparency = detectLogoTransparency(sizeColorState.logoImageData);
         }
-
-        // Sync background layer controls
-        const bgSizeSlider = document.getElementById('backgroundModuleSize');
-        const bgSizeLabel = document.getElementById('backgroundModuleSizeLabel');
-        if (bgSizeSlider && bgSizeLabel) {
-            bgSizeSlider.value = sizeColorState.backgroundModuleSize;
-            bgSizeLabel.textContent = sizeColorState.backgroundModuleSize;
-        }
-
-        const bgShapeSelect = document.getElementById('backgroundModuleShape');
-        if (bgShapeSelect) {
-            bgShapeSelect.value = sizeColorState.backgroundModuleShape;
-        }
-
-        // Show/hide background layer controls based on transparency
-        updateBackgroundLayerVisibility();
-
-        // Show logo preview
-        const previewImg = document.getElementById('sizeColorLogoPreviewImg');
-        const preview = document.getElementById('sizeColorLogoPreview');
-        if (previewImg && preview) {
-            previewImg.src = sizeColorState.logoImage;
-            preview.style.display = 'block';
-        }
     }
+
+    // Always sync UI controls to current sizeColorState (regardless of logo change)
+    // This ensures customizations persist when switching tabs
+
+    const quietZoneSlider = document.getElementById('sizeColorQuietZone');
+    const quietZoneLabel = document.getElementById('sizeColorQuietZoneLabel');
+    if (quietZoneSlider && quietZoneLabel) {
+        quietZoneSlider.value = sizeColorState.quietZone;
+        quietZoneLabel.textContent = sizeColorState.quietZone;
+    }
+
+    const fullSizeSepCheckbox = document.getElementById('fullSizeSeparators');
+    if (fullSizeSepCheckbox) {
+        fullSizeSepCheckbox.checked = sizeColorState.fullSizeSeparators;
+    }
+
+    const finderShapeSelect = document.getElementById('finderShape');
+    if (finderShapeSelect) {
+        finderShapeSelect.value = sizeColorState.finderShape;
+    }
+
+    // Sync finder color inputs
+    const finderOuterInput = document.getElementById('finderOuterColor');
+    if (finderOuterInput) {
+        finderOuterInput.value = sizeColorState.finderOuterColor;
+    }
+    const finderMiddleInput = document.getElementById('finderMiddleColor');
+    if (finderMiddleInput) {
+        finderMiddleInput.value = sizeColorState.finderMiddleColor;
+    }
+    const finderCenterInput = document.getElementById('finderCenterColor');
+    if (finderCenterInput) {
+        finderCenterInput.value = sizeColorState.finderCenterColor;
+    }
+
+    // Show/hide appropriate controls based on color mode
+    const gradientControls = document.getElementById('sizeColorGradientControls');
+    const paletteDisplay = document.getElementById('sizeColorPaletteDisplay');
+
+    if (sizeColorState.colorMode === 'gradient') {
+        if (gradientControls) gradientControls.style.display = 'block';
+        if (paletteDisplay) paletteDisplay.style.display = 'none';
+    } else if (sizeColorState.colorMode === 'palette') {
+        if (gradientControls) gradientControls.style.display = 'none';
+        if (paletteDisplay) paletteDisplay.style.display = 'block';
+    } else {
+        if (gradientControls) gradientControls.style.display = 'none';
+        if (paletteDisplay) paletteDisplay.style.display = 'none';
+    }
+
+    // Sync background layer controls
+    const bgSizeSlider = document.getElementById('backgroundModuleSize');
+    const bgSizeLabel = document.getElementById('backgroundModuleSizeLabel');
+    if (bgSizeSlider && bgSizeLabel) {
+        bgSizeSlider.value = sizeColorState.backgroundModuleSize;
+        bgSizeLabel.textContent = sizeColorState.backgroundModuleSize;
+    }
+
+    const bgShapeSelect = document.getElementById('backgroundModuleShape');
+    if (bgShapeSelect) {
+        bgShapeSelect.value = sizeColorState.backgroundModuleShape;
+    }
+
+    // Show/hide background layer controls based on transparency
+    updateBackgroundLayerVisibility();
+
+    // Sync palette color inputs to current state
+    displaySizeColorPalette();
 
     // Update info panel
     const size = currentMatrix.length;

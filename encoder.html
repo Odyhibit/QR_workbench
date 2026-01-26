@@ -166,7 +166,7 @@
     <div class="tabs">
         <button class="tab-button active" onclick="switchTab(0)">Data Entry</button>
         <button class="tab-button" onclick="switchTab(1)" disabled>Encode</button>
-        <button class="tab-button" onclick="switchTab(2)" disabled>Padding Editor</button>
+        <button class="tab-button" onclick="switchTab(2)" disabled>Logo</button>
         <button class="tab-button" onclick="switchTab(3)" disabled>Size & Color</button>
         <button class="tab-button" onclick="switchTab(4)" disabled>Module Delete</button>
     </div>
@@ -175,12 +175,223 @@
     <div class="tab-content active" id="tab1">
         <div class="side-panel">
             <div class="controls">
-                <h3 style="margin-top: 0;">Message Configuration</h3>
+                <h3 style="margin-top: 0;">QR Code Type</h3>
 
-                <div class="control-group">
-                    <label for="messageInput">Message:</label>
-                    <textarea id="messageInput" class="validated-input" placeholder="Enter your message here..."></textarea>
+                <div class="qr-type-selector">
+                    <div class="qr-type-card active" data-type="text" onclick="selectQrType('text')">
+                        <span class="icon">📝</span>
+                        <span class="label">Text</span>
+                    </div>
+                    <div class="qr-type-card" data-type="url" onclick="selectQrType('url')">
+                        <span class="icon">🔗</span>
+                        <span class="label">URL</span>
+                    </div>
+                    <div class="qr-type-card" data-type="contact" onclick="selectQrType('contact')">
+                        <span class="icon">👤</span>
+                        <span class="label">Contact</span>
+                    </div>
+                    <div class="qr-type-card" data-type="phone" onclick="selectQrType('phone')">
+                        <span class="icon">📞</span>
+                        <span class="label">Phone</span>
+                    </div>
+                    <div class="qr-type-card" data-type="sms" onclick="selectQrType('sms')">
+                        <span class="icon">💬</span>
+                        <span class="label">SMS</span>
+                    </div>
+                    <div class="qr-type-card" data-type="email" onclick="selectQrType('email')">
+                        <span class="icon">✉️</span>
+                        <span class="label">Email</span>
+                    </div>
+                    <div class="qr-type-card" data-type="wifi" onclick="selectQrType('wifi')">
+                        <span class="icon">📶</span>
+                        <span class="label">WiFi</span>
+                    </div>
+                    <div class="qr-type-card" data-type="event" onclick="selectQrType('event')">
+                        <span class="icon">📅</span>
+                        <span class="label">Event</span>
+                    </div>
+                    <div class="qr-type-card" data-type="location" onclick="selectQrType('location')">
+                        <span class="icon">📍</span>
+                        <span class="label">Location</span>
+                    </div>
                 </div>
+
+                <!-- Text Form (default) -->
+                <div class="qr-type-form active" id="form-text">
+                    <div class="form-row">
+                        <label for="textInput">Text Content:</label>
+                        <textarea id="textInput" rows="4" placeholder="Enter any text..."></textarea>
+                    </div>
+                </div>
+
+                <!-- URL Form -->
+                <div class="qr-type-form" id="form-url">
+                    <div class="form-row">
+                        <label for="urlInput">Website URL:</label>
+                        <input type="url" id="urlInput" placeholder="https://example.com">
+                        <div class="hint">Include https:// for best compatibility</div>
+                    </div>
+                </div>
+
+                <!-- Contact (vCard) Form -->
+                <div class="qr-type-form" id="form-contact">
+                    <div class="form-row-inline">
+                        <div class="form-row">
+                            <label for="contactFirstName">First Name:</label>
+                            <input type="text" id="contactFirstName" placeholder="John">
+                        </div>
+                        <div class="form-row">
+                            <label for="contactLastName">Last Name:</label>
+                            <input type="text" id="contactLastName" placeholder="Doe">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label for="contactPhone">Phone:</label>
+                        <input type="tel" id="contactPhone" placeholder="+1 555 123 4567">
+                    </div>
+                    <div class="form-row">
+                        <label for="contactEmail">Email:</label>
+                        <input type="email" id="contactEmail" placeholder="john@example.com">
+                    </div>
+                    <div class="form-row">
+                        <label for="contactCompany">Company:</label>
+                        <input type="text" id="contactCompany" placeholder="Acme Inc.">
+                    </div>
+                    <div class="form-row">
+                        <label for="contactTitle">Job Title:</label>
+                        <input type="text" id="contactTitle" placeholder="Software Engineer">
+                    </div>
+                    <div class="form-row">
+                        <label for="contactWebsite">Website:</label>
+                        <input type="url" id="contactWebsite" placeholder="https://example.com">
+                    </div>
+                    <div class="form-row">
+                        <label for="contactAddress">Address:</label>
+                        <input type="text" id="contactAddress" placeholder="123 Main St, City, State 12345">
+                    </div>
+                </div>
+
+                <!-- Phone Form -->
+                <div class="qr-type-form" id="form-phone">
+                    <div class="form-row">
+                        <label for="phoneNumber">Phone Number:</label>
+                        <input type="tel" id="phoneNumber" placeholder="+1 555 123 4567">
+                        <div class="hint">Include country code for international numbers</div>
+                    </div>
+                </div>
+
+                <!-- SMS Form -->
+                <div class="qr-type-form" id="form-sms">
+                    <div class="form-row">
+                        <label for="smsPhone">Phone Number:</label>
+                        <input type="tel" id="smsPhone" placeholder="+1 555 123 4567">
+                    </div>
+                    <div class="form-row">
+                        <label for="smsMessage">Message (optional):</label>
+                        <textarea id="smsMessage" rows="2" placeholder="Pre-filled message text..."></textarea>
+                    </div>
+                </div>
+
+                <!-- Email Form -->
+                <div class="qr-type-form" id="form-email">
+                    <div class="form-row">
+                        <label for="emailTo">To:</label>
+                        <input type="email" id="emailTo" placeholder="recipient@example.com">
+                    </div>
+                    <div class="form-row">
+                        <label for="emailSubject">Subject (optional):</label>
+                        <input type="text" id="emailSubject" placeholder="Email subject line">
+                    </div>
+                    <div class="form-row">
+                        <label for="emailBody">Body (optional):</label>
+                        <textarea id="emailBody" rows="2" placeholder="Email body text..."></textarea>
+                    </div>
+                </div>
+
+                <!-- WiFi Form -->
+                <div class="qr-type-form" id="form-wifi">
+                    <div class="form-row">
+                        <label for="wifiSsid">Network Name (SSID):</label>
+                        <input type="text" id="wifiSsid" placeholder="MyWiFiNetwork">
+                    </div>
+                    <div class="form-row">
+                        <label for="wifiPassword">Password:</label>
+                        <input type="text" id="wifiPassword" placeholder="WiFi password">
+                    </div>
+                    <div class="form-row">
+                        <label for="wifiEncryption">Security Type:</label>
+                        <select id="wifiEncryption">
+                            <option value="WPA">WPA/WPA2/WPA3</option>
+                            <option value="WEP">WEP</option>
+                            <option value="nopass">None (Open)</option>
+                        </select>
+                    </div>
+                    <div class="form-row">
+                        <label style="display: flex; align-items: center; gap: 6px; cursor: pointer;">
+                            <input type="checkbox" id="wifiHidden">
+                            <span>Hidden Network</span>
+                        </label>
+                    </div>
+                </div>
+
+                <!-- Event Form -->
+                <div class="qr-type-form" id="form-event">
+                    <div class="form-row">
+                        <label for="eventTitle">Event Title:</label>
+                        <input type="text" id="eventTitle" placeholder="Meeting with Team">
+                    </div>
+                    <div class="form-row-inline">
+                        <div class="form-row">
+                            <label for="eventStartDate">Start Date:</label>
+                            <input type="date" id="eventStartDate">
+                        </div>
+                        <div class="form-row">
+                            <label for="eventStartTime">Start Time:</label>
+                            <input type="time" id="eventStartTime">
+                        </div>
+                    </div>
+                    <div class="form-row-inline">
+                        <div class="form-row">
+                            <label for="eventEndDate">End Date:</label>
+                            <input type="date" id="eventEndDate">
+                        </div>
+                        <div class="form-row">
+                            <label for="eventEndTime">End Time:</label>
+                            <input type="time" id="eventEndTime">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label for="eventLocation">Location:</label>
+                        <input type="text" id="eventLocation" placeholder="Conference Room A">
+                    </div>
+                    <div class="form-row">
+                        <label for="eventDescription">Description:</label>
+                        <textarea id="eventDescription" rows="2" placeholder="Event details..."></textarea>
+                    </div>
+                </div>
+
+                <!-- Location Form -->
+                <div class="qr-type-form" id="form-location">
+                    <div class="form-row-inline">
+                        <div class="form-row">
+                            <label for="locationLat">Latitude:</label>
+                            <input type="number" id="locationLat" step="any" placeholder="37.7749">
+                        </div>
+                        <div class="form-row">
+                            <label for="locationLng">Longitude:</label>
+                            <input type="number" id="locationLng" step="any" placeholder="-122.4194">
+                        </div>
+                    </div>
+                    <div class="form-row">
+                        <label for="locationLabel">Label (optional):</label>
+                        <input type="text" id="locationLabel" placeholder="San Francisco, CA">
+                    </div>
+                    <div class="hint">Tip: Right-click on Google Maps and select coordinates to copy them</div>
+                </div>
+            </div>
+
+            <div class="controls">
+                <h3 style="margin-top: 0;">QR Settings</h3>
 
                 <div class="control-group">
                     <label for="dataModeSelect">Data Mode:</label>
@@ -230,16 +441,17 @@
                     All characters are valid for the selected mode.
                 </div>
             </div>
-
-
-
         </div>
 
         <div class="canvas-area">
             <div class="canvas-container">
-                <h2>Character Validation</h2>
-                <div id="charDisplay" class="char-display">
-                    View only, no editing in this panel...
+                <h2>Generated Output</h2>
+                <div style="margin-bottom: 10px; font-size: 12px; color: #666;">
+                    This is the formatted QR code content that will be encoded:
+                </div>
+                <textarea id="messageInput" class="validated-input" placeholder="Select a QR type and fill in the form..."></textarea>
+                <div id="charDisplay" class="char-display" style="margin-top: 15px;">
+                    Character validation will appear here...
                 </div>
             </div>
         </div>
@@ -329,7 +541,7 @@
         </div>
     </div>
 
-    <!-- Tab 3: Padding Editor -->
+    <!-- Tab 3: Logo -->
     <div class="tab-content" id="tab3">
         <div class="side-panel">
             <div class="controls">
@@ -381,12 +593,13 @@
                 </div>
 
                 <div class="control-group">
-                    <label>Transparent/Outside Pixels:</label>
+                    <label>Background Fill:</label>
                     <select id="logoBlendTransparentTreatment" style="width: 100%; padding: 5px;">
-                        <option value="light">Treat as Light</option>
-                        <option value="dark">Treat as Dark</option>
+                        <option value="transparent">Transparent</option>
+                        <option value="light">Light (use light palette color)</option>
+                        <option value="dark">Dark (use dark palette color)</option>
                     </select>
-                    <div style="font-size: 11px; color: #666; margin-top: 4px;">How to handle transparent pixels and areas outside the logo</div>
+                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Fill color for areas not covered by logo</div>
                 </div>
 
                 <div id="logoBlendGradientControls" style="display: none;">
@@ -486,10 +699,52 @@
     <!-- Tab 4: Size & Color -->
     <div class="tab-content" id="tab4">
         <div class="side-panel">
+            <!-- Finder Pattern Controls -->
             <div class="controls">
-                <h3 style="margin-top: 0;">Module Styling</h3>
+                <h3 style="margin-top: 0;">Finder Patterns</h3>
                 <div class="control-group">
-                    <label>Module Shape:</label>
+                    <label>Shape:</label>
+                    <select id="finderShape" style="width: 100%; padding: 5px;">
+                        <option value="square">Square (Traditional)</option>
+                        <option value="rounded">Rounded Squares</option>
+                        <option value="circle">Circle (Modern)</option>
+                        <option value="hybrid">Hybrid (Circle Outer + Square Center)</option>
+                        <option value="hybrid-inverse">Hybrid (Square Outer + Circle Center)</option>
+                    </select>
+                </div>
+
+                <div class="control-group">
+                    <label>Colors:</label>
+                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 4px;">
+                        <div style="text-align: center;">
+                            <input type="color" id="finderOuterColor" value="#000000" style="width: 40px; height: 28px; cursor: pointer; border: 1px solid #999; border-radius: 3px; padding: 0;">
+                            <div style="font-size: 9px; color: #666;">Outer</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <input type="color" id="finderMiddleColor" value="#ffffff" style="width: 40px; height: 28px; cursor: pointer; border: 1px solid #999; border-radius: 3px; padding: 0;">
+                            <div style="font-size: 9px; color: #666;">Middle</div>
+                        </div>
+                        <div style="text-align: center;">
+                            <input type="color" id="finderCenterColor" value="#000000" style="width: 40px; height: 28px; cursor: pointer; border: 1px solid #999; border-radius: 3px; padding: 0;">
+                            <div style="font-size: 9px; color: #666;">Center</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                        <input type="checkbox" id="fullSizeSeparators" style="cursor: pointer;">
+                        <span>Full-sized separators</span>
+                    </label>
+                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Keep separator modules at 100% for faster scanning</div>
+                </div>
+            </div>
+
+            <!-- Top Layer (Foreground) Controls -->
+            <div class="controls">
+                <h3 style="margin-top: 0;">Top Layer</h3>
+                <div class="control-group">
+                    <label>Shape:</label>
                     <select id="moduleShape" style="width: 100%; padding: 5px;">
                         <option value="square">Square</option>
                         <option value="circle">Circle</option>
@@ -500,59 +755,20 @@
                 </div>
 
                 <div class="control-group">
-                    <label for="moduleSize">Module Size: <span id="moduleSizeLabel">80</span>%</label>
+                    <label for="moduleSize">Size: <span id="moduleSizeLabel">80</span>%</label>
                     <input type="range" id="moduleSize" min="20" max="100" value="80" step="5" style="width: 100%;">
-                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Reduce module size to reveal logo underneath. Finder patterns (corner squares) stay full size.</div>
-                </div>
-
-                <div class="control-group">
-                    <label for="sizeColorQuietZone">Quiet Zone: <span id="sizeColorQuietZoneLabel">2</span> modules</label>
-                    <input type="range" id="sizeColorQuietZone" min="0" max="4" value="2" step="1" style="width: 100%;">
-                    <div style="font-size: 11px; color: #666; margin-top: 4px;">White border around the QR code (recommended: 2-4)</div>
-                </div>
-
-                <div class="control-group">
-                    <label>Finder Pattern Shape:</label>
-                    <select id="finderShape" style="width: 100%; padding: 5px;">
-                        <option value="square">Square (Traditional)</option>
-                        <option value="rounded">Rounded Squares</option>
-                        <option value="circle">Circle (Modern)</option>
-                        <option value="hybrid">Hybrid (Circle Outer + Square Center)</option>
-                        <option value="hybrid-inverse">Hybrid (Square Outer + Circle Center)</option>
-                    </select>
-                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Shape style for the three corner finder patterns</div>
-                    <div style="display: flex; align-items: center; gap: 8px; margin-top: 8px;">
-                        <span style="font-size: 11px; color: #666;">Colors:</span>
-                        <input type="color" id="finderOuterColor" value="#000000" style="width: 28px; height: 24px; cursor: pointer; border: 1px solid #999; border-radius: 3px; padding: 0;" title="Outer (dark)">
-                        <input type="color" id="finderMiddleColor" value="#ffffff" style="width: 28px; height: 24px; cursor: pointer; border: 1px solid #999; border-radius: 3px; padding: 0;" title="Middle (light)">
-                        <input type="color" id="finderCenterColor" value="#000000" style="width: 28px; height: 24px; cursor: pointer; border: 1px solid #999; border-radius: 3px; padding: 0;" title="Center (dark)">
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-                        <input type="checkbox" id="fullSizeSeparators" style="cursor: pointer;">
-                        <span>Full-sized separators</span>
-                    </label>
-                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Test option: Keep separator modules at 100% size for faster scanning</div>
                 </div>
             </div>
 
-            <!-- Background Layer Controls - shown only when logo has transparency -->
+            <!-- Bottom Layer (Background) Controls - shown only when logo has transparency -->
             <div id="backgroundLayerControls" class="controls" style="display: none;">
-                <h3 style="margin-top: 0;">Background Layer</h3>
+                <h3 style="margin-top: 0;">Bottom Layer</h3>
                 <div style="font-size: 11px; color: #666; margin-bottom: 10px; padding: 6px; background: #f0fff0; border-left: 3px solid #4caf50; border-radius: 3px;">
-                    Your logo has transparency. Set background size larger than foreground to fill in behind transparent areas.
+                    Logo has transparency - bottom layer shows behind transparent areas.
                 </div>
 
                 <div class="control-group">
-                    <label for="backgroundModuleSize">Background Module Size: <span id="backgroundModuleSizeLabel">100</span>%</label>
-                    <input type="range" id="backgroundModuleSize" min="20" max="100" value="100" step="5" style="width: 100%;">
-                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Set larger than foreground to show behind transparent areas</div>
-                </div>
-
-                <div class="control-group">
-                    <label>Background Module Shape:</label>
+                    <label>Shape:</label>
                     <select id="backgroundModuleShape" style="width: 100%; padding: 5px;">
                         <option value="square">Square</option>
                         <option value="circle">Circle</option>
@@ -561,8 +777,14 @@
                         <option value="diamond">Diamond</option>
                     </select>
                 </div>
+
+                <div class="control-group">
+                    <label for="backgroundModuleSize">Size: <span id="backgroundModuleSizeLabel">100</span>%</label>
+                    <input type="range" id="backgroundModuleSize" min="20" max="100" value="100" step="5" style="width: 100%;">
+                </div>
             </div>
 
+            <!-- Module Colors -->
             <div class="controls">
                 <h3 style="margin-top: 0;">Module Colors</h3>
                 <div class="control-group">
@@ -572,39 +794,25 @@
                         <option value="palette">Palette - Match to extracted colors</option>
                         <option value="gradient">Gradient - Sample logo colors</option>
                     </select>
-                    <div id="sizeColorModeDescription" style="font-size: 11px; color: #666; margin-top: 4px;">
-                        Standard black and white QR code
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <label>Transparent/Outside Pixels:</label>
-                    <select id="sizeColorTransparentTreatment" style="width: 100%; padding: 5px;">
-                        <option value="light">Treat as Light</option>
-                        <option value="dark">Treat as Dark</option>
-                    </select>
-                    <div style="font-size: 11px; color: #666; margin-top: 4px;">How to handle transparent pixels and areas outside the logo</div>
                 </div>
 
                 <div id="sizeColorGradientControls" style="display: none;">
                     <div style="font-size: 11px; color: #666; margin-bottom: 8px; padding: 6px; background: #f0f8ff; border-left: 3px solid #4a9eff; border-radius: 3px;">
-                        <strong>Gradient Mode:</strong> Each module samples the logo color at its center position and adjusts brightness for scannability.
+                        Each module samples the logo color and adjusts brightness for scannability.
                     </div>
                     <div class="control-group">
                         <label>Dark Max Luminosity: <span id="sizeColorDarkLumLabel">33</span>%</label>
                         <input type="range" id="sizeColorDarkMaxLum" min="0" max="50" value="33" style="width: 100%;">
-                        <div style="font-size: 10px; color: #666; margin-top: 2px;">Dark modules stay below this brightness</div>
                     </div>
                     <div class="control-group">
                         <label>Light Min Luminosity: <span id="sizeColorLightMinLabel">50</span>%</label>
                         <input type="range" id="sizeColorLightMinLum" min="50" max="100" value="50" style="width: 100%;">
-                        <div style="font-size: 10px; color: #666; margin-top: 2px;">Light modules stay above this brightness</div>
                     </div>
                 </div>
 
                 <div id="sizeColorPaletteDisplay" style="display: none; margin-bottom: 10px;">
                     <div style="font-size: 11px; color: #666; margin-bottom: 8px; padding: 6px; background: #f0f8ff; border-left: 3px solid #4a9eff; border-radius: 3px;">
-                        <strong>Palette Mode:</strong> Extracts dominant colors from the logo and matches each module to the closest color. Click any color to edit it.
+                        Click any color to edit it.
                     </div>
                     <div style="font-size: 12px; font-weight: bold; margin-bottom: 5px;">Dark Colors:</div>
                     <div style="display: flex; gap: 4px; margin-bottom: 4px;">
@@ -638,34 +846,17 @@
                             <input type="color" id="sizeColorLightColor3" class="palette-color-picker" data-type="light" data-index="3" style="width: 100%; height: 30px; cursor: pointer; border: 1px solid #999; border-radius: 3px;">
                         </div>
                     </div>
-                    <div style="font-size: 10px; color: #666; margin-top: 8px;">1st color: Background/outside logo | 2nd-4th: Matched to logo</div>
+                    <div style="font-size: 10px; color: #666; margin-top: 8px;">1st: Background/outside logo | 2nd-4th: Matched to logo</div>
                 </div>
             </div>
 
+            <!-- General Settings -->
             <div class="controls">
-                <h3 style="margin-top: 0;">Background Logo</h3>
+                <h3 style="margin-top: 0;">General</h3>
                 <div class="control-group">
-                    <label for="sizeColorLogoUpload">Logo Image:</label>
-                    <input type="file" id="sizeColorLogoUpload" accept="image/*" style="width: 100%; padding: 5px; font-size: 12px;">
-                    <div style="font-size: 11px; color: #666; margin-top: 4px;">Upload an image to display behind the QR code</div>
-                    <div id="sizeColorLogoPreview" style="display: none; margin-top: 8px; text-align: center;">
-                        <img id="sizeColorLogoPreviewImg" style="max-width: 100%; max-height: 150px; border: 1px solid #ddd; border-radius: 4px;">
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <label>Logo Scale: <span id="sizeColorLogoScaleLabel">100</span>%</label>
-                    <input type="range" id="sizeColorLogoScale" min="50" max="150" value="100" style="width: 100%;">
-                </div>
-
-                <div class="control-group">
-                    <label>Logo Position X: <span id="sizeColorLogoXLabel">50</span>%</label>
-                    <input type="range" id="sizeColorLogoX" min="0" max="100" value="50" style="width: 100%;">
-                </div>
-
-                <div class="control-group">
-                    <label>Logo Position Y: <span id="sizeColorLogoYLabel">50</span>%</label>
-                    <input type="range" id="sizeColorLogoY" min="0" max="100" value="50" style="width: 100%;">
+                    <label for="sizeColorQuietZone">Quiet Zone: <span id="sizeColorQuietZoneLabel">2</span> modules</label>
+                    <input type="range" id="sizeColorQuietZone" min="0" max="4" value="2" step="1" style="width: 100%;">
+                    <div style="font-size: 11px; color: #666; margin-top: 4px;">White border around QR code</div>
                 </div>
             </div>
 
@@ -681,7 +872,7 @@
             <div class="canvas-container">
                 <h2>Styled QR Code Preview</h2>
                 <p style="color: #666; margin-bottom: 10px;">
-                    Adjust module size, shape, and colors. The logo appears in the gaps around reduced modules.
+                    Adjust module size, shape, and colors. Logo settings come from the Logo tab.
                 </p>
                 <canvas id="sizeColorCanvas" width="600" height="600" style="border: 1px solid #ddd; background: white; display: block; margin: 0 auto;"></canvas>
             </div>
@@ -769,11 +960,56 @@
     <script src="encoder-core.js"></script>
     <script src="encoder-ui.js"></script>
     <script src="encoder.js"></script>
+    <script src="qr-types.js"></script>
     <script src="padding-editor.js"></script>
     <script src="logo-blend.js"></script>
     <script src="size-color-editor.js"></script>
     <script src="module-delete.js"></script>
     <script>
+        // Sync logo settings from Logo tab to Size & Color and Module Delete tabs
+        function syncLogoToOtherTabs() {
+            if (typeof logoBlendState === 'undefined' || !logoBlendState.logoImg) return;
+
+            // Sync to Size & Color state
+            if (typeof sizeColorState !== 'undefined') {
+                sizeColorState.logoImage = logoBlendState.logoImage;
+                sizeColorState.logoImg = logoBlendState.logoImg;
+                sizeColorState.logoImageData = logoBlendState.logoImageData;
+                sizeColorState.logoScale = logoBlendState.logoScale;
+                sizeColorState.logoX = logoBlendState.logoX;
+                sizeColorState.logoY = logoBlendState.logoY;
+                sizeColorState.colorMode = logoBlendState.colorMode;
+                sizeColorState.darkMaxLuminosity = logoBlendState.darkMaxLuminosity;
+                sizeColorState.lightMinLuminosity = logoBlendState.lightMinLuminosity;
+                sizeColorState.transparentTreatment = logoBlendState.transparentTreatment;
+                if (logoBlendState.darkPalette) {
+                    sizeColorState.darkPalette = [...logoBlendState.darkPalette];
+                }
+                if (logoBlendState.lightPalette) {
+                    sizeColorState.lightPalette = [...logoBlendState.lightPalette];
+                }
+
+                // Detect transparency
+                if (sizeColorState.logoImageData && typeof detectLogoTransparency === 'function') {
+                    sizeColorState.logoHasTransparency = detectLogoTransparency(sizeColorState.logoImageData);
+                    // Update background layer visibility
+                    if (typeof updateBackgroundLayerVisibility === 'function') {
+                        updateBackgroundLayerVisibility();
+                    }
+                }
+
+                // Re-render Size & Color if canvas exists
+                if (document.getElementById('sizeColorCanvas') && typeof renderSizeColorQR === 'function') {
+                    renderSizeColorQR();
+                }
+            }
+
+            // Re-render Module Delete tab if it's been initialized
+            if (typeof deleteState !== 'undefined' && typeof renderDeleteCanvas === 'function') {
+                renderDeleteCanvas();
+            }
+        }
+
         // Logo blend UI event handlers
         document.getElementById('logoBlendUpload')?.addEventListener('change', function(e) {
             const file = e.target.files[0];
@@ -800,6 +1036,9 @@
                         renderPaddingGrid();
                     }
 
+                    // Sync to other tabs
+                    syncLogoToOtherTabs();
+
                     showLogoBlendStatus('✓ Logo loaded successfully! The logo now appears behind the QR grid. Click "Apply Logo Blend to Padding" to match padding modules.', 'success');
                 });
             }
@@ -824,6 +1063,7 @@
             if (typeof renderPaddingGrid === 'function') {
                 renderPaddingGrid();
             }
+            syncLogoToOtherTabs();
         });
 
         document.getElementById('darkMaxLumBlend')?.addEventListener('input', function(e) {
@@ -848,6 +1088,7 @@
             if (typeof renderPaddingGrid === 'function') {
                 renderPaddingGrid();
             }
+            syncLogoToOtherTabs();
         });
 
         document.getElementById('logoBlendX')?.addEventListener('input', function(e) {
@@ -856,6 +1097,7 @@
             if (typeof renderPaddingGrid === 'function') {
                 renderPaddingGrid();
             }
+            syncLogoToOtherTabs();
         });
 
         document.getElementById('logoBlendY')?.addEventListener('input', function(e) {
@@ -864,6 +1106,7 @@
             if (typeof renderPaddingGrid === 'function') {
                 renderPaddingGrid();
             }
+            syncLogoToOtherTabs();
         });
 
         function displayExtractedPalette() {
@@ -964,47 +1207,6 @@
             renderSizeColorQR();
         });
 
-        document.getElementById('sizeColorLogoUpload')?.addEventListener('change', function(e) {
-            const file = e.target.files[0];
-            if (file) {
-                loadSizeColorLogo(file, function() {
-                    // Show preview image
-                    const previewImg = document.getElementById('sizeColorLogoPreviewImg');
-                    const preview = document.getElementById('sizeColorLogoPreview');
-                    if (previewImg && preview) {
-                        previewImg.src = sizeColorState.logoImage;
-                        preview.style.display = 'block';
-                    }
-
-                    // Show palette if in palette mode
-                    if (sizeColorState.colorMode === 'palette') {
-                        displaySizeColorPalette();
-                    }
-
-                    // Re-render to show logo background
-                    renderSizeColorQR();
-                });
-            }
-        });
-
-        document.getElementById('sizeColorLogoScale')?.addEventListener('input', function(e) {
-            sizeColorState.logoScale = parseInt(e.target.value);
-            document.getElementById('sizeColorLogoScaleLabel').textContent = e.target.value;
-            renderSizeColorQR();
-        });
-
-        document.getElementById('sizeColorLogoX')?.addEventListener('input', function(e) {
-            sizeColorState.logoX = parseInt(e.target.value);
-            document.getElementById('sizeColorLogoXLabel').textContent = e.target.value;
-            renderSizeColorQR();
-        });
-
-        document.getElementById('sizeColorLogoY')?.addEventListener('input', function(e) {
-            sizeColorState.logoY = parseInt(e.target.value);
-            document.getElementById('sizeColorLogoYLabel').textContent = e.target.value;
-            renderSizeColorQR();
-        });
-
         document.getElementById('sizeColorColorMode')?.addEventListener('change', function(e) {
             sizeColorState.colorMode = e.target.value;
 
@@ -1032,11 +1234,6 @@
                 }
             }
 
-            renderSizeColorQR();
-        });
-
-        document.getElementById('sizeColorTransparentTreatment')?.addEventListener('change', function(e) {
-            sizeColorState.transparentTreatment = e.target.value;
             renderSizeColorQR();
         });
 

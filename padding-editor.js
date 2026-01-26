@@ -225,9 +225,18 @@ function renderPaddingGrid() {
     canvas.width = size * moduleSize;
     canvas.height = size * moduleSize;
 
-    // Clear canvas
+    // Clear canvas with white
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    // Fill with background color based on transparentTreatment
+    if (typeof logoBlendState !== 'undefined' && logoBlendState.transparentTreatment !== 'transparent') {
+        const bgColor = logoBlendState.transparentTreatment === 'dark'
+            ? (logoBlendState.darkPalette ? logoBlendState.darkPalette[0] : '#000000')
+            : (logoBlendState.lightPalette ? logoBlendState.lightPalette[0] : '#ffffff');
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+    }
 
     // Draw logo as background layer if loaded
     if (typeof logoBlendState !== 'undefined' && logoBlendState.logoImg) {

@@ -285,7 +285,7 @@ let logoBlendState = {
     logoScale: 100,
     logoX: 50, // Center percentage
     logoY: 50, // Center percentage
-    transparentTreatment: 'light' // 'light' or 'dark' - how to treat transparent/outside pixels
+    transparentTreatment: 'transparent' // 'transparent', 'light', or 'dark' - background fill for areas not covered by logo
 };
 
 // ========== STATUS DISPLAY ==========
@@ -323,6 +323,52 @@ function showLogoBlendStatus(message, type = 'info') {
 /**
  * Load logo image and extract colors
  */
+/**
+ * Auto-detect the best background fill setting based on logo analysis
+ * Returns: 'transparent', 'dark', or 'light'
+ */
+function autoDetectBackgroundFill(imageData) {
+    const data = imageData.data;
+    let hasTransparency = false;
+    let totalLuminance = 0;
+    let opaquePixelCount = 0;
+
+    // Sample every 16th pixel for performance
+    for (let i = 0; i < data.length; i += 64) {
+        const r = data[i];
+        const g = data[i + 1];
+        const b = data[i + 2];
+        const a = data[i + 3];
+
+        if (a < 250) {
+            hasTransparency = true;
+        }
+
+        if (a > 128) {
+            // Calculate luminance for opaque-ish pixels
+            const luminance = 0.299 * r + 0.587 * g + 0.114 * b;
+            totalLuminance += luminance;
+            opaquePixelCount++;
+        }
+    }
+
+    // If logo has transparency, default to transparent
+    if (hasTransparency) {
+        return 'transparent';
+    }
+
+    // Calculate average luminance (0-255)
+    const avgLuminance = opaquePixelCount > 0 ? totalLuminance / opaquePixelCount : 128;
+
+    // If mostly dark (< 85, roughly 1/3 of 255), default to dark
+    if (avgLuminance < 85) {
+        return 'dark';
+    }
+
+    // Otherwise default to light
+    return 'light';
+}
+
 function loadLogoForBlending(file, callback) {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -343,6 +389,16 @@ function loadLogoForBlending(file, callback) {
             const colors = extractDominantColors(img);
             logoBlendState.darkPalette = colors.darkPalette;
             logoBlendState.lightPalette = colors.lightPalette;
+
+            // Auto-detect best background fill setting
+            const detectedFill = autoDetectBackgroundFill(logoBlendState.logoImageData);
+            logoBlendState.transparentTreatment = detectedFill;
+
+            // Update the dropdown to reflect the auto-detected value
+            const dropdown = document.getElementById('logoBlendTransparentTreatment');
+            if (dropdown) {
+                dropdown.value = detectedFill;
+            }
 
             if (callback) callback();
         };
@@ -430,7 +486,8 @@ function getLogoBlendColor(canvasX, canvasY, isDark, canvasSize) {
 
     if (!sampledRgba) {
         // Module is outside logo, use transparentTreatment setting
-        const treatAsLight = logoBlendState.transparentTreatment === 'light';
+        // 'transparent' and 'light' both show light background, 'dark' shows dark
+        const treatAsLight = logoBlendState.transparentTreatment !== 'dark';
         return treatAsLight ? '#ffffff' : '#000000';
     }
 
@@ -438,7 +495,8 @@ function getLogoBlendColor(canvasX, canvasY, isDark, canvasSize) {
     const alpha = sampledRgba[3];
     if (alpha < 128) {
         // Transparent pixel, use transparentTreatment setting
-        const treatAsLight = logoBlendState.transparentTreatment === 'light';
+        // 'transparent' and 'light' both show light background, 'dark' shows dark
+        const treatAsLight = logoBlendState.transparentTreatment !== 'dark';
         return treatAsLight ? '#ffffff' : '#000000';
     }
 

@@ -230,19 +230,19 @@ function renderDeleteCanvas() {
     canvas.width = canvasSize;
     canvas.height = canvasSize;
 
+    const qrAreaSize = size * modulePixelSize;
+
     // Clear canvas with white (quiet zone)
     ctx.fillStyle = 'white';
     ctx.fillRect(0, 0, canvasSize, canvasSize);
 
-    // Draw logo background if available
-    if (sizeColorState.logoImg) {
-        ctx.save();
-        ctx.translate(offsetPixels, offsetPixels);
-        const qrAreaSize = size * modulePixelSize;
-        if (typeof drawSizeColorLogoBackground === 'function') {
-            drawSizeColorLogoBackground(ctx, qrAreaSize, qrAreaSize);
-        }
-        ctx.restore();
+    // STEP 1: Fill QR area with background color based on transparentTreatment
+    if (sizeColorState.transparentTreatment !== 'transparent') {
+        const bgColor = sizeColorState.transparentTreatment === 'dark'
+            ? sizeColorState.darkPalette[0]
+            : sizeColorState.lightPalette[0];
+        ctx.fillStyle = bgColor;
+        ctx.fillRect(offsetPixels, offsetPixels, qrAreaSize, qrAreaSize);
     }
 
     // Get finder pattern colors from state
@@ -250,7 +250,34 @@ function renderDeleteCanvas() {
     const finderMiddleColor = sizeColorState.finderMiddleColor;
     const finderCenterColor = sizeColorState.finderCenterColor;
 
-    // Draw all modules using Size & Color styling
+    // STEP 2: Background modules layer (when logo has transparency)
+    if (sizeColorState.logoImg && sizeColorState.logoHasTransparency && typeof drawModuleLayer === 'function') {
+        const bgSizeFraction = sizeColorState.backgroundModuleSize / 100;
+        drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, bgSizeFraction,
+                       sizeColorState.backgroundModuleShape, true);
+
+        // Draw finder patterns for background layer
+        if (typeof drawCustomFinderPattern === 'function') {
+            drawCustomFinderPattern(ctx, 0, 0, modulePixelSize, offsetPixels,
+                                   finderOuterColor, finderMiddleColor, finderCenterColor, bgSizeFraction, size);
+            drawCustomFinderPattern(ctx, 0, size - 7, modulePixelSize, offsetPixels,
+                                   finderOuterColor, finderMiddleColor, finderCenterColor, bgSizeFraction, size);
+            drawCustomFinderPattern(ctx, size - 7, 0, modulePixelSize, offsetPixels,
+                                   finderOuterColor, finderMiddleColor, finderCenterColor, bgSizeFraction, size);
+        }
+    }
+
+    // STEP 3: Logo (sandwiched between module layers)
+    if (sizeColorState.logoImg) {
+        ctx.save();
+        ctx.translate(offsetPixels, offsetPixels);
+        if (typeof drawSizeColorLogoBackground === 'function') {
+            drawSizeColorLogoBackground(ctx, qrAreaSize, qrAreaSize);
+        }
+        ctx.restore();
+    }
+
+    // STEP 4: Foreground modules using Size & Color styling
     for (let row = 0; row < size; row++) {
         for (let col = 0; col < size; col++) {
             const moduleKey = `${row},${col}`;
