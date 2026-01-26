@@ -16,7 +16,15 @@ const App = {
         dragStartX: 0,
         dragStartY: 0,
         logoStartX: 50,
-        logoStartY: 50
+        logoStartY: 50,
+        // Encoding state for padding modification
+        bitstreamData: null,
+        blocks: null,
+        maskPattern: 0,
+        eccLevel: 'M',
+        paddingModuleMap: null,
+        editableCells: new Set(),
+        originalPaddingBytes: null
     },
 
     // Initialize application
@@ -103,10 +111,13 @@ const App = {
 
         // Actions per step
         if (step === 2) {
-            this.generateQR();
+            // Only regenerate if we don't have a matrix yet
+            if (!this.state.matrix) {
+                this.generateQR();
+            }
             this.renderLogoCanvas();
         } else if (step === 3) {
-            this.generateQR();
+            // Don't regenerate - use the existing (possibly optimized) matrix
             this.renderMainCanvas();
         }
     },
@@ -289,21 +300,32 @@ const App = {
             let version = this.getSelectedVersion();
             const mode = this.detectMode(content);
 
+            // Get selected ECC level
+            const eccLevel = this.getSelectedEccLevel();
+            this.state.eccLevel = eccLevel;
+
             // Find minimum version that fits
             if (version === 'auto') {
-                version = this.findMinVersion(content, mode, 'M');
+                version = this.findMinVersion(content, mode, eccLevel);
             } else {
                 version = parseInt(version);
             }
 
             this.state.version = version;
+            this.state.maskPattern = 0; // Default mask pattern
 
             // Generate bitstream
-            const bitstreamData = generateBitstream(content, mode, version, 'M', capacityTable);
+            const bitstreamData = generateBitstream(content, mode, version, eccLevel, capacityTable);
+
+            // Store bitstreamData for padding modification
+            this.state.bitstreamData = bitstreamData;
 
             // Split into blocks and calculate ECC
-            let blocks = splitIntoBlocks(bitstreamData.dataBytes, version, 'M', blockSizeTable);
+            let blocks = splitIntoBlocks(bitstreamData.dataBytes, version, eccLevel, blockSizeTable);
             blocks = calculateEccForBlocks(blocks);
+
+            // Store blocks for padding modification
+            this.state.blocks = blocks;
 
             // Interleave
             const interleaved = interleaveBlocks(blocks);
@@ -315,11 +337,20 @@ const App = {
             // Place patterns and data
             placeFunctionPatterns(matrix, version);
             placeDataBits(matrix, interleaved);
-            applyMask(matrix, 0, version); // Use mask pattern 0
-            placeFormatInfo(matrix, 'M', 0, version);
+            applyMask(matrix, this.state.maskPattern, version);
+            placeFormatInfo(matrix, eccLevel, this.state.maskPattern, version);
             placeVersionInfo(matrix, version);
 
             this.state.matrix = matrix;
+
+            // Build padding module map if there are padding bytes
+            if (bitstreamData.padBytes && bitstreamData.padBytes.length > 0) {
+                this.buildPaddingModuleMap();
+            } else {
+                this.state.paddingModuleMap = null;
+                this.state.editableCells = new Set();
+                this.state.originalPaddingBytes = null;
+            }
         } catch (e) {
             console.error('QR generation error:', e);
             this.state.matrix = null;
@@ -367,6 +398,12 @@ const App = {
     getSelectedVersion() {
         const select = document.getElementById('versionSelect');
         return select ? select.value : 'auto';
+    },
+
+    // Get selected ECC level
+    getSelectedEccLevel() {
+        const select = document.getElementById('eccSelect');
+        return select ? select.value : 'M';
     },
 
     // Render small preview (step 1)
@@ -490,6 +527,16 @@ const App = {
 
         // Version select (in logo step)
         document.getElementById('versionSelect').addEventListener('change', () => {
+            this.generateQR();
+            if (this.state.currentStep === 2) {
+                this.renderLogoCanvas();
+            } else if (this.state.currentStep === 3) {
+                this.renderMainCanvas();
+            }
+        });
+
+        // ECC level select (in logo step)
+        document.getElementById('eccSelect').addEventListener('change', () => {
             this.generateQR();
             if (this.state.currentStep === 2) {
                 this.renderLogoCanvas();
@@ -708,13 +755,14 @@ const App = {
             if (!content) return null;
 
             const version = this.state.version;
+            const eccLevel = this.state.eccLevel;
             const mode = this.detectMode(content);
 
             // Generate bitstream
-            const bitstreamData = generateBitstream(content, mode, version, 'M', capacityTable);
+            const bitstreamData = generateBitstream(content, mode, version, eccLevel, capacityTable);
 
             // Split into blocks and calculate ECC
-            let blocks = splitIntoBlocks(bitstreamData.dataBytes, version, 'M', blockSizeTable);
+            let blocks = splitIntoBlocks(bitstreamData.dataBytes, version, eccLevel, blockSizeTable);
             blocks = calculateEccForBlocks(blocks);
 
             // Interleave
@@ -728,7 +776,7 @@ const App = {
             placeFunctionPatterns(matrix, version);
             placeDataBits(matrix, interleaved);
             applyMask(matrix, maskPattern, version);
-            placeFormatInfo(matrix, 'M', maskPattern, version);
+            placeFormatInfo(matrix, eccLevel, maskPattern, version);
             placeVersionInfo(matrix, version);
 
             return matrix;
@@ -782,53 +830,463 @@ const App = {
         return { matches, total };
     },
 
-    // Optimize mask pattern for best logo match
+    // ========== PADDING MODULE MAPPING ==========
+
+    // Identify which bytes in the bitstream are padding bytes
+    identifyPaddingBytes() {
+        const bitstreamData = this.state.bitstreamData;
+        if (!bitstreamData) return null;
+
+        // Calculate total message bits (everything before padding)
+        const messageBits = bitstreamData.modeIndicator.length +
+                           bitstreamData.charCount.length +
+                           bitstreamData.messageData.length +
+                           bitstreamData.terminator.length +
+                           bitstreamData.bytePadding.length;
+
+        const messageBytes = Math.ceil(messageBits / 8);
+        const paddingByteCount = bitstreamData.padBytes.length;
+
+        return {
+            startByteIndex: messageBytes,
+            endByteIndex: messageBytes + paddingByteCount,
+            paddingByteIndices: Array.from(
+                {length: paddingByteCount},
+                (_, i) => messageBytes + i
+            )
+        };
+    },
+
+    // Track padding bytes through block split and interleaving
+    trackPaddingThroughInterleaving(paddingByteIndices, blocks) {
+        const paddingInBlocks = [];
+
+        let originalDataBytesOffset = 0;
+
+        blocks.forEach((block, blockIdx) => {
+            block.data.forEach((byte, localByteIdx) => {
+                const originalIndex = originalDataBytesOffset + localByteIdx;
+
+                if (paddingByteIndices.includes(originalIndex)) {
+                    const paddingByteIndex = paddingByteIndices.indexOf(originalIndex);
+
+                    paddingInBlocks.push({
+                        blockIndex: blockIdx,
+                        localByteIndex: localByteIdx,
+                        originalDataIndex: originalIndex,
+                        paddingByteIndex: paddingByteIndex,
+                        value: byte
+                    });
+                }
+            });
+
+            originalDataBytesOffset += block.data.length;
+        });
+
+        // Simulate interleaving to find position in interleaved array
+        const paddingInInterleaved = [];
+        const maxDataLen = Math.max(...blocks.map(b => b.data.length));
+
+        let interleavedIndex = 0;
+        for (let i = 0; i < maxDataLen; i++) {
+            blocks.forEach((block, blockIdx) => {
+                if (i < block.data.length) {
+                    const isPadding = paddingInBlocks.find(
+                        p => p.blockIndex === blockIdx && p.localByteIndex === i
+                    );
+                    if (isPadding) {
+                        paddingInInterleaved.push({
+                            ...isPadding,
+                            interleavedIndex
+                        });
+                    }
+                    interleavedIndex++;
+                }
+            });
+        }
+
+        return paddingInInterleaved;
+    },
+
+    // Map an interleaved byte index to its module positions in the matrix
+    mapInterleavedToModules(interleavedIndex, size, version) {
+        const modulePositions = [];
+        const startBitIndex = interleavedIndex * 8;
+
+        // Simulate the zigzag placement algorithm
+        let bitIndex = 0;
+        let direction = -1; // -1 = up, 1 = down
+        let col = size - 1;
+
+        while (col >= 1 && modulePositions.length < 8) {
+            for (let count = 0; count < size && modulePositions.length < 8; count++) {
+                let row = direction === -1 ? size - 1 - count : count;
+
+                for (let c = 0; c < 2 && modulePositions.length < 8; c++) {
+                    const currentCol = col - c;
+
+                    // Check if this is a function module (skip if it is)
+                    if (!isFunctionModule(row, currentCol, size, version)) {
+                        if (bitIndex >= startBitIndex && bitIndex < startBitIndex + 8) {
+                            modulePositions.push({
+                                row,
+                                col: currentCol,
+                                bitOffset: bitIndex - startBitIndex
+                            });
+                        }
+                        bitIndex++;
+                    }
+                }
+            }
+
+            col -= 2;
+            if (col === 6) col--; // Skip timing column
+            direction *= -1;
+        }
+
+        return modulePositions;
+    },
+
+    // Build complete mapping: padding byte index → module positions
+    buildPaddingModuleMap() {
+        const bitstreamData = this.state.bitstreamData;
+        const blocks = this.state.blocks;
+        const version = this.state.version;
+
+        if (!bitstreamData || !blocks || !version) return;
+
+        const size = 21 + (version - 1) * 4;
+        const paddingInfo = this.identifyPaddingBytes();
+        if (!paddingInfo || paddingInfo.paddingByteIndices.length === 0) {
+            this.state.paddingModuleMap = null;
+            this.state.editableCells = new Set();
+            return;
+        }
+
+        const paddingInterleaved = this.trackPaddingThroughInterleaving(
+            paddingInfo.paddingByteIndices,
+            blocks
+        );
+
+        const paddingModuleMap = new Map();
+
+        paddingInterleaved.forEach((padInfo) => {
+            const modules = this.mapInterleavedToModules(
+                padInfo.interleavedIndex,
+                size,
+                version
+            );
+            paddingModuleMap.set(padInfo.paddingByteIndex, modules);
+        });
+
+        this.state.paddingModuleMap = paddingModuleMap;
+
+        // Build editable cells set
+        this.state.editableCells = new Set();
+        paddingModuleMap.forEach((modules) => {
+            modules.forEach(m => {
+                this.state.editableCells.add(`${m.row},${m.col}`);
+            });
+        });
+
+        // Store original padding bytes
+        this.state.originalPaddingBytes = [...bitstreamData.padBytes];
+    },
+
+    // ========== LOGO BLEND TO PADDING ==========
+
+    // Convert padding edits (displayed/masked values) to unmasked byte values
+    convertPaddingEditsToBytes(edits, maskPattern) {
+        const newPaddingBytes = [...this.state.originalPaddingBytes];
+        const paddingModuleMap = this.state.paddingModuleMap;
+
+        paddingModuleMap.forEach((modules, padByteIdx) => {
+            // Check if this byte has any edited modules
+            const hasEdits = modules.some(module => {
+                const cellKey = `${module.row},${module.col}`;
+                return edits.has(cellKey);
+            });
+
+            if (!hasEdits) {
+                return; // Keep original value
+            }
+
+            const bits = new Array(8).fill(0);
+
+            modules.forEach((module) => {
+                const cellKey = `${module.row},${module.col}`;
+
+                let bitValue;
+                if (edits.has(cellKey)) {
+                    // This is the masked (displayed) value we want
+                    const maskedValue = edits.get(cellKey);
+                    const shouldFlip = shouldFlipModule(module.row, module.col, maskPattern);
+                    // Unmask to get the raw bit value
+                    bitValue = shouldFlip ? !maskedValue : maskedValue;
+                } else {
+                    // Use original bit value
+                    const originalByte = this.state.originalPaddingBytes[padByteIdx];
+                    const bitInByte = (originalByte >> (7 - module.bitOffset)) & 1;
+                    bitValue = bitInByte === 1;
+                }
+
+                bits[module.bitOffset] = bitValue ? 1 : 0;
+            });
+
+            // Convert bits to byte
+            let byteValue = 0;
+            for (let i = 0; i < 8; i++) {
+                byteValue = (byteValue << 1) | bits[i];
+            }
+            newPaddingBytes[padByteIdx] = byteValue;
+        });
+
+        return newPaddingBytes;
+    },
+
+    // Sample logo at position and determine desired dark/light for padding modules
+    getDesiredPaddingEdits(moduleSize, canvasSize, matrixSize, maskPattern) {
+        const edits = new Map();
+        const editableCells = this.state.editableCells;
+
+        editableCells.forEach(cellKey => {
+            const [row, col] = cellKey.split(',').map(Number);
+            const canvasX = (col + 0.5) * moduleSize;
+            const canvasY = (row + 0.5) * moduleSize;
+
+            const sampledRgba = QRRenderer.sampleLogo(canvasX, canvasY, canvasSize);
+
+            if (!sampledRgba || sampledRgba[3] < 128) {
+                // Outside logo or transparent - keep current masked value
+                return;
+            }
+
+            // Match logo luminance
+            const sampledLuminance = 0.299 * sampledRgba[0] + 0.587 * sampledRgba[1] + 0.114 * sampledRgba[2];
+            const wantsDark = sampledLuminance < 128; // true = dark module
+
+            edits.set(cellKey, wantsDark);
+        });
+
+        return edits;
+    },
+
+    // Simulate applying a mask with padding modifications to count matches
+    simulateMaskWithLogoBlend(maskPattern, desiredColors, moduleSize, canvasSize) {
+        const version = this.state.version;
+        const size = 21 + (version - 1) * 4;
+
+        // Save original dataBytes
+        const originalDataBytes = [...this.state.bitstreamData.dataBytes];
+
+        // Step 1: Get padding edits for this mask pattern
+        const testPaddingEdits = new Map();
+        const editableCells = this.state.editableCells;
+
+        // Generate matrix with this mask to see current values
+        let testMatrix = this.generateQRWithMask(maskPattern);
+
+        editableCells.forEach(cellKey => {
+            const [row, col] = cellKey.split(',').map(Number);
+            const canvasX = (col + 0.5) * moduleSize;
+            const canvasY = (row + 0.5) * moduleSize;
+
+            const sampledRgba = QRRenderer.sampleLogo(canvasX, canvasY, canvasSize);
+
+            let moduleValue;
+            if (!sampledRgba || sampledRgba[3] < 128) {
+                // Outside logo or transparent - keep current masked value
+                moduleValue = Boolean(testMatrix[row][col]);
+            } else {
+                // Match logo luminance
+                const sampledLuminance = 0.299 * sampledRgba[0] + 0.587 * sampledRgba[1] + 0.114 * sampledRgba[2];
+                moduleValue = sampledLuminance < 128; // true = dark
+            }
+
+            testPaddingEdits.set(cellKey, moduleValue);
+        });
+
+        // Step 2: Convert padding edits to unmasked bytes
+        const newPaddingBytes = this.convertPaddingEditsToBytes(testPaddingEdits, maskPattern);
+
+        // Step 3: Update dataBytes with new padding
+        const paddingInfo = this.identifyPaddingBytes();
+        const messageBytes = paddingInfo.startByteIndex;
+
+        const testDataBytes = [...originalDataBytes];
+        newPaddingBytes.forEach((byte, idx) => {
+            testDataBytes[messageBytes + idx] = byte;
+        });
+
+        // Step 4: Recalculate ECC with new padding
+        const testBlocks = splitIntoBlocks(testDataBytes, version, this.state.eccLevel, blockSizeTable);
+        calculateEccForBlocks(testBlocks);
+
+        // Step 5: Regenerate matrix with new data+ECC
+        const newInterleaved = interleaveBlocks(testBlocks);
+        testMatrix = createMatrix(size);
+        placeFunctionPatterns(testMatrix, version);
+        placeDataBits(testMatrix, newInterleaved);
+        applyMask(testMatrix, maskPattern, version);
+        placeFormatInfo(testMatrix, this.state.eccLevel, maskPattern, version);
+        placeVersionInfo(testMatrix, version);
+
+        // Step 6: Count how many modules match the logo
+        let matches = 0;
+        desiredColors.forEach((wantsDark, cellKey) => {
+            const [row, col] = cellKey.split(',').map(Number);
+            const moduleValue = Boolean(testMatrix[row][col]);
+            if (moduleValue === wantsDark) {
+                matches++;
+            }
+        });
+
+        return {
+            matches: matches,
+            paddingBytes: newPaddingBytes,
+            paddingEdits: testPaddingEdits
+        };
+    },
+
+    // Get desired colors for ALL modules based on logo (not just padding)
+    getDesiredLogoColors(moduleSize, canvasSize, matrixSize) {
+        const desiredValues = new Map();
+
+        for (let row = 0; row < matrixSize; row++) {
+            for (let col = 0; col < matrixSize; col++) {
+                const canvasX = (col + 0.5) * moduleSize;
+                const canvasY = (row + 0.5) * moduleSize;
+
+                const sampledRgba = QRRenderer.sampleLogo(canvasX, canvasY, canvasSize);
+
+                if (!sampledRgba) continue;
+
+                const alpha = sampledRgba[3];
+                if (alpha < 128) continue;
+
+                // Determine if the logo wants this to be dark or light
+                const sampledLuminance = 0.299 * sampledRgba[0] + 0.587 * sampledRgba[1] + 0.114 * sampledRgba[2];
+                const wantsDark = sampledLuminance < 128;
+
+                desiredValues.set(`${row},${col}`, wantsDark);
+            }
+        }
+
+        return desiredValues;
+    },
+
+    // Apply logo blend to padding - modifies actual padding bytes
+    applyLogoBlendToPadding() {
+        if (!QRRenderer.state.logoImg || !QRRenderer.state.logoImageData) {
+            return { success: false, message: 'Please upload a logo first.' };
+        }
+
+        if (!this.state.paddingModuleMap || this.state.editableCells.size === 0) {
+            return { success: false, message: 'No padding modules available to modify.' };
+        }
+
+        const size = this.state.matrix.length;
+        const quietZone = QRRenderer.state.quietZone;
+        const totalSize = size + (quietZone * 2);
+        const canvasSize = 450; // Match logo canvas size
+        const moduleSize = canvasSize / totalSize;
+        const qrAreaSize = size * moduleSize;
+
+        // Get desired colors for ALL modules based on logo
+        const desiredColors = this.getDesiredLogoColors(moduleSize, qrAreaSize, size);
+
+        if (desiredColors.size === 0) {
+            return { success: false, message: 'No modules inside logo area to optimize.' };
+        }
+
+        // Test all 8 mask patterns
+        const scores = [];
+        let bestResult = null;
+
+        for (let maskPattern = 0; maskPattern < 8; maskPattern++) {
+            const result = this.simulateMaskWithLogoBlend(maskPattern, desiredColors, moduleSize, qrAreaSize);
+
+            const score = {
+                mask: maskPattern,
+                matches: result.matches,
+                total: desiredColors.size,
+                percentage: Math.round((result.matches / desiredColors.size) * 100),
+                paddingBytes: result.paddingBytes,
+                paddingEdits: result.paddingEdits
+            };
+
+            scores.push(score);
+
+            if (!bestResult || result.matches > bestResult.matches) {
+                bestResult = score;
+            }
+        }
+
+        const selectedMask = bestResult.mask;
+
+        // Apply the best mask and padding modifications
+        const paddingInfo = this.identifyPaddingBytes();
+        const messageBytes = paddingInfo.startByteIndex;
+
+        // Update dataBytes with new padding
+        bestResult.paddingBytes.forEach((byte, idx) => {
+            this.state.bitstreamData.dataBytes[messageBytes + idx] = byte;
+        });
+        this.state.bitstreamData.padBytes = [...bestResult.paddingBytes];
+
+        // Recalculate ECC
+        const blocks = splitIntoBlocks(this.state.bitstreamData.dataBytes, this.state.version, this.state.eccLevel, blockSizeTable);
+        calculateEccForBlocks(blocks);
+        this.state.blocks = blocks;
+
+        // Regenerate matrix with new data+ECC and best mask
+        const interleaved = interleaveBlocks(blocks);
+        const newMatrix = createMatrix(size);
+        placeFunctionPatterns(newMatrix, this.state.version);
+        placeDataBits(newMatrix, interleaved);
+        applyMask(newMatrix, selectedMask, this.state.version);
+        placeFormatInfo(newMatrix, this.state.eccLevel, selectedMask, this.state.version);
+        placeVersionInfo(newMatrix, this.state.version);
+
+        this.state.matrix = newMatrix;
+        this.state.maskPattern = selectedMask;
+
+        // Update original padding bytes for future modifications
+        this.state.originalPaddingBytes = [...bestResult.paddingBytes];
+
+        return {
+            success: true,
+            bestMask: selectedMask,
+            matches: bestResult.matches,
+            total: desiredColors.size,
+            percentage: bestResult.percentage,
+            scores: scores
+        };
+    },
+
+    // Optimize mask pattern for best logo match (including padding modification)
     optimizeMaskForLogo() {
         if (!QRRenderer.state.logoImg) {
             return;
         }
 
         const resultEl = document.getElementById('optimizeResult');
-        resultEl.textContent = 'Testing mask patterns...';
+        resultEl.textContent = 'Testing mask patterns and optimizing padding...';
         resultEl.style.display = 'block';
 
         // Small delay to allow UI to update
         setTimeout(() => {
-            const scores = [];
-            let bestMask = 0;
-            let bestMatches = -1;
+            const result = this.applyLogoBlendToPadding();
 
-            // Test all 8 mask patterns
-            for (let mask = 0; mask < 8; mask++) {
-                const matrix = this.generateQRWithMask(mask);
-                if (!matrix) continue;
-
-                const result = this.countLogoMatches(matrix);
-                scores.push({
-                    mask,
-                    matches: result.matches,
-                    total: result.total,
-                    percentage: result.total > 0 ? Math.round((result.matches / result.total) * 100) : 0
-                });
-
-                if (result.matches > bestMatches) {
-                    bestMatches = result.matches;
-                    bestMask = mask;
-                }
+            if (!result.success) {
+                resultEl.textContent = result.message;
+                resultEl.style.color = '#6b7280';
+                return;
             }
-
-            // Apply the best mask
-            this.state.matrix = this.generateQRWithMask(bestMask);
 
             // Show result
-            const bestScore = scores.find(s => s.mask === bestMask);
-            if (bestScore && bestScore.total > 0) {
-                resultEl.innerHTML = `<strong>Optimized!</strong> Using mask ${bestMask} - ${bestScore.matches}/${bestScore.total} modules match (${bestScore.percentage}%)`;
-                resultEl.style.color = '#10b981';
-            } else {
-                resultEl.textContent = 'No modules inside logo area to optimize.';
-                resultEl.style.color = '#6b7280';
-            }
+            resultEl.innerHTML = `<strong>Optimized!</strong> Using mask ${result.bestMask} - ${result.matches}/${result.total} modules match logo (${result.percentage}%)`;
+            resultEl.style.color = '#10b981';
 
             // Re-render
             this.renderLogoCanvas();

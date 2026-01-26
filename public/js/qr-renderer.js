@@ -476,9 +476,10 @@ const QRRenderer = {
     },
 
     /**
-     * Render with transparent modules (for logo positioning step)
+     * Render with logo as background layer (for logo positioning step)
+     * Logo is drawn at partial opacity underneath, QR modules are fully opaque on top
      */
-    renderWithTransparency(canvas, matrix, version, moduleOpacity = 0.4) {
+    renderWithTransparency(canvas, matrix, version, logoOpacity = 0.4) {
         if (!matrix) return;
 
         const ctx = canvas.getContext('2d');
@@ -502,17 +503,18 @@ const QRRenderer = {
         }
         ctx.fillRect(0, 0, canvasSize, canvasSize);
 
-        // Draw logo background (full opacity)
+        // Draw logo as background layer (partial opacity)
         if (this.state.logoImg) {
+            ctx.globalAlpha = logoOpacity;
             this.drawLogoBackground(ctx, offset, offset, qrAreaSize);
+            ctx.globalAlpha = 1.0;
         }
 
         // Ensure quiet zone stays white even if logo scales beyond content
         this.drawQuietZoneOverlay(ctx, canvasSize, moduleSize, quietZone);
 
-        // Draw semi-transparent modules on top
-        ctx.globalAlpha = moduleOpacity;
-
+        // Draw modules on top with slight transparency so logo shows through
+        ctx.globalAlpha = 0.75;
         const sizeFraction = 0.85; // Use larger modules for visibility
 
         // Draw all modules as simple black/white
@@ -527,7 +529,6 @@ const QRRenderer = {
             }
         }
 
-        // Reset alpha
         ctx.globalAlpha = 1.0;
     },
 

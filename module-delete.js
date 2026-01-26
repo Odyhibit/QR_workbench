@@ -550,9 +550,21 @@ function setupDeleteCanvasEvents() {
                         // Check if we can delete from this block
                         if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
                             const block = deleteState.blockInfo[blockIndex];
-                            if (block.deletedCount >= block.eccCount) {
-                                alert(`Cannot delete more codewords from Block ${blockIndex + 1}.\nECC capacity: ${block.eccCount}\nAlready deleted: ${block.deletedCount}`);
-                                return;
+                            const maxErrors = Math.floor(block.eccCount / 2);
+
+                            if (block.deletedCount >= maxErrors) {
+                                // Beyond error correction capacity - require confirmation
+                                const confirmMsg = block.deletedCount >= maxErrors
+                                    ? `Warning: Block ${blockIndex + 1} is at or beyond error correction capacity!\n\n` +
+                                      `Max correctable errors: ${maxErrors}\n` +
+                                      `Currently deleted: ${block.deletedCount}\n\n` +
+                                      `Deleting more codewords will likely make the QR code unscannable.\n\n` +
+                                      `Continue anyway?`
+                                    : null;
+
+                                if (confirmMsg && !confirm(confirmMsg)) {
+                                    return;
+                                }
                             }
                             deleteState.deletedCodewords.add(codewordIndex);
                             block.deletedCount++;
@@ -595,16 +607,62 @@ function updateHoverIndicator() {
         const block = deleteState.blockInfo[deleteState.hoveredBlockIndex];
         const isEcc = deleteState.hoveredCodewordIndex !== null && isEccCodeword(deleteState.hoveredCodewordIndex);
         const codewordType = isEcc ? 'ECC' : 'Data';
+        const maxErrors = Math.floor(block.eccCount / 2);
+        const status = getBlockDeletionStatus(block.deletedCount, block.eccCount);
 
         indicator.style.display = 'block';
-        indicator.style.background = block.color;
+        indicator.style.background = status.bgColor;
+        indicator.style.borderLeft = `4px solid ${block.color}`;
         indicator.innerHTML = `
-            <div style="font-weight: bold;">Block ${deleteState.hoveredBlockIndex + 1}</div>
+            <div style="font-weight: bold; color: ${block.color};">Block ${deleteState.hoveredBlockIndex + 1}</div>
             <div style="font-size: 10px;">${codewordType} Codeword</div>
-            <div style="font-size: 10px;">${block.deletedCount}/${block.eccCount} deleted</div>
+            <div style="font-size: 10px; color: ${status.color}; font-weight: bold;">${block.deletedCount}/${maxErrors} deleted</div>
+            <div style="font-size: 9px; color: ${status.color};">${status.label}</div>
         `;
     } else {
         indicator.style.display = 'none';
+    }
+}
+
+/**
+ * Get the status color and label for a block's deletion count
+ * Based on Reed-Solomon error correction capacity: maxErrors = floor(eccCount / 2)
+ */
+function getBlockDeletionStatus(deletedCount, eccCount) {
+    const maxErrors = Math.floor(eccCount / 2);
+
+    if (deletedCount > maxErrors) {
+        return {
+            color: '#d32f2f',
+            bgColor: '#ffcdd2',
+            barColor: '#d32f2f',
+            label: 'OVER LIMIT',
+            status: 'danger'
+        };
+    } else if (deletedCount === maxErrors) {
+        return {
+            color: '#d32f2f',
+            bgColor: '#ffcdd2',
+            barColor: '#d32f2f',
+            label: 'AT LIMIT',
+            status: 'red'
+        };
+    } else if (deletedCount >= maxErrors - 2 && maxErrors > 2) {
+        return {
+            color: '#f57c00',
+            bgColor: '#fff3e0',
+            barColor: '#ff9800',
+            label: 'WARNING',
+            status: 'yellow'
+        };
+    } else {
+        return {
+            color: '#388e3c',
+            bgColor: '#e8f5e9',
+            barColor: '#4caf50',
+            label: 'OK',
+            status: 'green'
+        };
     }
 }
 
@@ -624,11 +682,12 @@ function updateDeleteInfo() {
     if (blockLegend && deleteState.blockInfo) {
         let legendHtml = '';
         deleteState.blockInfo.forEach((block, index) => {
-            const percentage = block.eccCount > 0 ? ((block.deletedCount / block.eccCount) * 100).toFixed(0) : 0;
-            const isAtCapacity = block.deletedCount >= block.eccCount;
+            const maxErrors = Math.floor(block.eccCount / 2);
+            const percentage = maxErrors > 0 ? Math.min(100, (block.deletedCount / maxErrors) * 100).toFixed(0) : 0;
+            const status = getBlockDeletionStatus(block.deletedCount, block.eccCount);
 
             legendHtml += `
-                <div style="margin-bottom: 8px; padding: 6px; background: ${isAtCapacity ? '#ffe0e0' : 'white'}; border-left: 4px solid ${block.color}; border-radius: 3px;">
+                <div style="margin-bottom: 8px; padding: 6px; background: ${status.bgColor}; border-left: 4px solid ${block.color}; border-radius: 3px;">
                     <div style="display: flex; justify-content: space-between; align-items: center;">
                         <div>
                             <strong>Block ${index + 1}</strong>
@@ -637,14 +696,17 @@ function updateDeleteInfo() {
                             </div>
                         </div>
                         <div style="text-align: right;">
-                            <div style="font-weight: bold; color: ${isAtCapacity ? '#d32f2f' : '#333'};">
-                                ${block.deletedCount} / ${block.eccCount}
+                            <div style="font-weight: bold; color: ${status.color};">
+                                ${block.deletedCount} / ${maxErrors}
                             </div>
-                            <div style="font-size: 10px; color: #666;">deleted</div>
+                            <div style="font-size: 10px; color: ${status.color}; font-weight: bold;">${status.label}</div>
                         </div>
                     </div>
                     <div style="background: #e0e0e0; height: 6px; border-radius: 3px; overflow: hidden; margin-top: 4px;">
-                        <div style="background: ${block.color}; height: 100%; width: ${percentage}%; transition: width 0.3s;"></div>
+                        <div style="background: ${status.barColor}; height: 100%; width: ${percentage}%; transition: width 0.3s;"></div>
+                    </div>
+                    <div style="font-size: 9px; color: #888; margin-top: 2px; text-align: right;">
+                        max correctable: ${maxErrors}
                     </div>
                 </div>
             `;
