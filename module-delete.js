@@ -1,18 +1,18 @@
-// Module Delete Editor for QR Code Workbench
-// Allows users to delete data codewords to utilize error correction capacity
+// Module Edit/Delete Editor for QR Code Workbench
+// Allows users to delete or modify codewords to utilize error correction capacity
 
 // ========== STATE MANAGEMENT ==========
 let deleteState = {
-    interactionMode: 'codeword', // 'codeword' or 'module'
+    editMode: 'delete', // 'delete' or 'modify'
     deletedModuleColor: '#ff0000',
     deletedCodewords: new Set(), // Set of codeword indices that are deleted
-    deletedModules: new Set(), // Set of "row,col" strings for individual module deletion
+    modifiedCodewords: new Map(), // Map of codewordIndex -> modified byte value
     hoveredCodewordIndex: null, // Currently hovered codeword index
-    hoveredModuleKey: null, // Currently hovered module "row,col"
     hoveredBlockIndex: null, // Currently hovered block index
     codewordMap: null, // Map from codeword index to {positions, isEcc, blockIndex, byteValue}
     blockInfo: [], // Array of {dataCount, eccCount, deletedCount, color}
     totalCodewords: 0,
+    maskPattern: 0, // Current mask pattern (0-7) for applying to modified bits
     blockColors: [
         '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
         '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B88B', '#ABEBC6'
@@ -182,6 +182,49 @@ function getCodewordIndexForModule(row, col) {
     return null;
 }
 
+function getBitIndexForModule(row, col, codewordIndex) {
+    if (!deleteState.codewordMap) return null;
+    const codewordData = deleteState.codewordMap.get(codewordIndex);
+    if (!codewordData) return null;
+    return codewordData.positions.findIndex(pos => pos.row === row && pos.col === col);
+}
+
+function getOriginalCodewordByte(codewordIndex) {
+    if (!deleteState.codewordMap) return 0;
+    const codewordData = deleteState.codewordMap.get(codewordIndex);
+    return codewordData ? codewordData.byteValue : 0;
+}
+
+function getModifiedCodewordByte(codewordIndex) {
+    if (deleteState.modifiedCodewords.has(codewordIndex)) {
+        return deleteState.modifiedCodewords.get(codewordIndex);
+    }
+    return getOriginalCodewordByte(codewordIndex);
+}
+
+function refreshBlockCounts() {
+    if (!deleteState.blockInfo) return;
+    deleteState.blockInfo.forEach(block => {
+        block.deletedCount = 0;
+    });
+
+    if (deleteState.editMode === 'delete') {
+        deleteState.deletedCodewords.forEach(codewordIndex => {
+            const blockIndex = getBlockIndexForCodeword(codewordIndex);
+            if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
+                deleteState.blockInfo[blockIndex].deletedCount++;
+            }
+        });
+    } else {
+        deleteState.modifiedCodewords.forEach((_, codewordIndex) => {
+            const blockIndex = getBlockIndexForCodeword(codewordIndex);
+            if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
+                deleteState.blockInfo[blockIndex].deletedCount++;
+            }
+        });
+    }
+}
+
 /**
  * Get the block index for a codeword
  */
@@ -205,8 +248,9 @@ function isEccCodeword(codewordIndex) {
 /**
  * Render the delete canvas using Size & Color styling
  */
-function renderDeleteCanvas() {
-    const canvas = document.getElementById('deleteCanvas');
+function renderDeleteCanvas(options = {}) {
+    const canvas = options.canvas || document.getElementById('deleteCanvas');
+    const showOverlays = options.showOverlays !== false;
     if (!canvas || !currentMatrix) return;
 
     // Check if Size & Color editor has been initialized
@@ -295,15 +339,12 @@ function renderDeleteCanvas() {
     // STEP 4: Foreground modules using Size & Color styling
     for (let row = 0; row < size; row++) {
         for (let col = 0; col < size; col++) {
-            const moduleKey = `${row},${col}`;
             const codewordIndex = getCodewordIndexForModule(row, col);
 
             // Check if this module is deleted - if so, skip drawing it
-            const isDeleted = (deleteState.interactionMode === 'codeword' &&
-                              codewordIndex !== null &&
-                              deleteState.deletedCodewords.has(codewordIndex)) ||
-                             (deleteState.interactionMode === 'module' &&
-                              deleteState.deletedModules.has(moduleKey));
+            const isDeleted = deleteState.editMode === 'delete' &&
+                codewordIndex !== null &&
+                deleteState.deletedCodewords.has(codewordIndex);
 
             if (isDeleted) continue; // Don't draw deleted modules at all
 
@@ -319,7 +360,18 @@ function renderDeleteCanvas() {
 
             const moduleX = offsetPixels + (col * modulePixelSize);
             const moduleY = offsetPixels + (row * modulePixelSize);
-            const isDark = currentMatrix[row][col];
+            let isDark = currentMatrix[row][col];
+            if (codewordIndex !== null && deleteState.modifiedCodewords.has(codewordIndex)) {
+                const bitIndex = getBitIndexForModule(row, col, codewordIndex);
+                if (bitIndex !== null && bitIndex >= 0) {
+                    const byteValue = getModifiedCodewordByte(codewordIndex);
+                    // Get the raw (unmasked) bit value
+                    const rawBit = ((byteValue >> (7 - bitIndex)) & 1) === 1;
+                    // Apply mask pattern to get the display value
+                    const maskFlip = shouldFlipModule(row, col, deleteState.maskPattern);
+                    isDark = maskFlip ? !rawBit : rawBit;
+                }
+            }
 
             let currentSizeFraction;
             let currentShape;
@@ -365,53 +417,74 @@ function renderDeleteCanvas() {
         drawCustomFinderPattern(ctx, size - 7, 0, modulePixelSize, offsetPixels, finderOuterColor, finderMiddleColor, finderCenterColor, sizeFraction, size);
     }
 
-    // Now overlay hover highlights only
-    for (let row = 0; row < size; row++) {
-        for (let col = 0; col < size; col++) {
-            const moduleKey = `${row},${col}`;
-            const codewordIndex = getCodewordIndexForModule(row, col);
+    if (showOverlays) {
+        // Now overlay hover highlights and deleted indicators
+        for (let row = 0; row < size; row++) {
+            for (let col = 0; col < size; col++) {
+                const codewordIndex = getCodewordIndexForModule(row, col);
 
-            // Check if this module is being hovered
-            const isHovered = (deleteState.interactionMode === 'codeword' &&
-                              codewordIndex !== null &&
-                              codewordIndex === deleteState.hoveredCodewordIndex) ||
-                             (deleteState.interactionMode === 'module' &&
-                              moduleKey === deleteState.hoveredModuleKey);
+                // Check if this module is deleted
+                const isDeleted = deleteState.editMode === 'delete' &&
+                    codewordIndex !== null &&
+                    deleteState.deletedCodewords.has(codewordIndex);
 
-            if (isHovered) {
+                // Check if this module is being hovered
+                const isHovered = codewordIndex !== null &&
+                    codewordIndex === deleteState.hoveredCodewordIndex;
+
+                const isModified = codewordIndex !== null &&
+                    deleteState.modifiedCodewords.has(codewordIndex);
+
                 const moduleX = offsetPixels + (col * modulePixelSize);
                 const moduleY = offsetPixels + (row * modulePixelSize);
 
-                // Check if this codeword is deleted
-                const isDeleted = (deleteState.interactionMode === 'codeword' &&
-                                  codewordIndex !== null &&
-                                  deleteState.deletedCodewords.has(codewordIndex)) ||
-                                 (deleteState.interactionMode === 'module' &&
-                                  deleteState.deletedModules.has(moduleKey));
-
-                // Color by block
-                let hoverColor;
-                if (isDeleted) {
-                    hoverColor = 'rgba(255, 0, 0, 0.5)'; // Red for deleted
-                } else if (codewordIndex !== null) {
-                    const blockIndex = getBlockIndexForCodeword(codewordIndex);
-                    if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
-                        const blockColor = deleteState.blockInfo[blockIndex].color;
-                        // Convert hex to rgba with transparency
-                        const hex = blockColor.replace('#', '');
-                        const r = parseInt(hex.substr(0, 2), 16);
-                        const g = parseInt(hex.substr(2, 2), 16);
-                        const b = parseInt(hex.substr(4, 2), 16);
-                        hoverColor = `rgba(${r}, ${g}, ${b}, 0.4)`;
-                    } else {
-                        hoverColor = 'rgba(255, 255, 0, 0.4)'; // Fallback
-                    }
-                } else {
-                    hoverColor = 'rgba(255, 255, 0, 0.4)'; // Fallback
+                // Draw red outline for deleted modules (original color still visible)
+                if (isDeleted && !isHovered) {
+                    ctx.strokeStyle = '#ff0000';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(moduleX + 1, moduleY + 1, modulePixelSize - 2, modulePixelSize - 2);
                 }
 
-                ctx.fillStyle = hoverColor;
-                ctx.fillRect(moduleX, moduleY, modulePixelSize, modulePixelSize);
+                // Draw blue outline for modified modules in modify mode
+                if (deleteState.editMode === 'modify' && isModified && !isHovered) {
+                    ctx.strokeStyle = '#2563eb';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(moduleX + 1, moduleY + 1, modulePixelSize - 2, modulePixelSize - 2);
+                }
+
+                // Draw outline for hovered modules (block color outline)
+                if (isHovered) {
+                    let strokeColor;
+                    if (codewordIndex !== null) {
+                        const blockIndex = getBlockIndexForCodeword(codewordIndex);
+                        if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
+                            strokeColor = deleteState.blockInfo[blockIndex].color;
+                        } else {
+                            strokeColor = '#ffff00'; // Fallback yellow
+                        }
+                    } else {
+                        strokeColor = '#ffff00'; // Fallback yellow
+                    }
+
+                    // Draw outline
+                    ctx.strokeStyle = strokeColor;
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(moduleX + 1, moduleY + 1, modulePixelSize - 2, modulePixelSize - 2);
+
+                    // If deleted and hovered, add inner red outline to show both states
+                    if (isDeleted) {
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(moduleX + 3, moduleY + 3, modulePixelSize - 6, modulePixelSize - 6);
+                    }
+
+                    // If modified and hovered in modify mode, add inner blue outline
+                    if (deleteState.editMode === 'modify' && isModified) {
+                        ctx.strokeStyle = '#2563eb';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(moduleX + 3, moduleY + 3, modulePixelSize - 6, modulePixelSize - 6);
+                    }
+                }
             }
         }
     }
@@ -420,8 +493,9 @@ function renderDeleteCanvas() {
 /**
  * Fallback basic rendering if Size & Color not available
  */
-function renderDeleteCanvasBasic() {
-    const canvas = document.getElementById('deleteCanvas');
+function renderDeleteCanvasBasic(options = {}) {
+    const canvas = options.canvas || document.getElementById('deleteCanvas');
+    const showOverlays = options.showOverlays !== false;
     if (!canvas || !currentMatrix) return;
 
     const ctx = canvas.getContext('2d');
@@ -433,7 +507,26 @@ function renderDeleteCanvasBasic() {
 
     for (let row = 0; row < size; row++) {
         for (let col = 0; col < size; col++) {
-            const isDark = currentMatrix[row][col];
+            const codewordIndex = getCodewordIndexForModule(row, col);
+            const isDeleted = deleteState.editMode === 'delete' &&
+                codewordIndex !== null &&
+                deleteState.deletedCodewords.has(codewordIndex);
+
+            if (isDeleted) continue;
+
+            let isDark = currentMatrix[row][col];
+            if (codewordIndex !== null && deleteState.modifiedCodewords.has(codewordIndex)) {
+                const bitIndex = getBitIndexForModule(row, col, codewordIndex);
+                if (bitIndex !== null && bitIndex >= 0) {
+                    const byteValue = getModifiedCodewordByte(codewordIndex);
+                    // Get the raw (unmasked) bit value
+                    const rawBit = ((byteValue >> (7 - bitIndex)) & 1) === 1;
+                    // Apply mask pattern to get the display value
+                    const maskFlip = shouldFlipModule(row, col, deleteState.maskPattern);
+                    isDark = maskFlip ? !rawBit : rawBit;
+                }
+            }
+
             ctx.fillStyle = isDark ? 'black' : 'white';
             ctx.fillRect(col * moduleSize, row * moduleSize, moduleSize, moduleSize);
 
@@ -442,6 +535,75 @@ function renderDeleteCanvasBasic() {
             ctx.strokeRect(col * moduleSize, row * moduleSize, moduleSize, moduleSize);
         }
     }
+
+    if (showOverlays) {
+        for (let row = 0; row < size; row++) {
+            for (let col = 0; col < size; col++) {
+                const codewordIndex = getCodewordIndexForModule(row, col);
+                const isDeleted = deleteState.editMode === 'delete' &&
+                    codewordIndex !== null &&
+                    deleteState.deletedCodewords.has(codewordIndex);
+                const isModified = codewordIndex !== null &&
+                    deleteState.modifiedCodewords.has(codewordIndex);
+                const isHovered = codewordIndex !== null &&
+                    codewordIndex === deleteState.hoveredCodewordIndex;
+
+                const x = col * moduleSize;
+                const y = row * moduleSize;
+
+                if (isDeleted && !isHovered) {
+                    ctx.strokeStyle = '#ff0000';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 1, y + 1, moduleSize - 2, moduleSize - 2);
+                }
+
+                if (deleteState.editMode === 'modify' && isModified && !isHovered) {
+                    ctx.strokeStyle = '#2563eb';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 1, y + 1, moduleSize - 2, moduleSize - 2);
+                }
+
+                if (isHovered) {
+                    ctx.strokeStyle = '#ffff00';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(x + 1, y + 1, moduleSize - 2, moduleSize - 2);
+
+                    if (isDeleted) {
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(x + 3, y + 3, moduleSize - 6, moduleSize - 6);
+                    }
+
+                    if (deleteState.editMode === 'modify' && isModified) {
+                        ctx.strokeStyle = '#2563eb';
+                        ctx.lineWidth = 1;
+                        ctx.strokeRect(x + 3, y + 3, moduleSize - 6, moduleSize - 6);
+                    }
+                }
+            }
+        }
+    }
+}
+
+function downloadDeleteCanvasClean() {
+    const sourceCanvas = document.getElementById('deleteCanvas');
+    if (!sourceCanvas || !currentMatrix) return;
+
+    const exportCanvas = document.createElement('canvas');
+    exportCanvas.width = sourceCanvas.width;
+    exportCanvas.height = sourceCanvas.height;
+
+    if (typeof sizeColorState === 'undefined' || typeof renderSizeColorQR === 'undefined') {
+        renderDeleteCanvasBasic({ canvas: exportCanvas, showOverlays: false });
+    } else {
+        renderDeleteCanvas({ canvas: exportCanvas, showOverlays: false });
+    }
+
+    const dataURL = exportCanvas.toDataURL('image/png');
+    const link = document.createElement('a');
+    link.download = 'qr-code-clean.png';
+    link.href = dataURL;
+    link.click();
 }
 
 // ========== EVENT HANDLERS ==========
@@ -479,22 +641,14 @@ function setupDeleteCanvasEvents() {
         const row = Math.floor((y - offsetPixels) / modulePixelSize);
 
         if (row >= 0 && row < size && col >= 0 && col < size) {
-            if (deleteState.interactionMode === 'codeword') {
-                const codewordIndex = getCodewordIndexForModule(row, col);
-                const blockIndex = codewordIndex !== null ? getBlockIndexForCodeword(codewordIndex) : null;
+            const codewordIndex = getCodewordIndexForModule(row, col);
+            const blockIndex = codewordIndex !== null ? getBlockIndexForCodeword(codewordIndex) : null;
 
-                if (codewordIndex !== deleteState.hoveredCodewordIndex || blockIndex !== deleteState.hoveredBlockIndex) {
-                    deleteState.hoveredCodewordIndex = codewordIndex;
-                    deleteState.hoveredBlockIndex = blockIndex;
-                    updateHoverIndicator();
-                    renderDeleteCanvas();
-                }
-            } else {
-                const moduleKey = `${row},${col}`;
-                if (moduleKey !== deleteState.hoveredModuleKey) {
-                    deleteState.hoveredModuleKey = moduleKey;
-                    renderDeleteCanvas();
-                }
+            if (codewordIndex !== deleteState.hoveredCodewordIndex || blockIndex !== deleteState.hoveredBlockIndex) {
+                deleteState.hoveredCodewordIndex = codewordIndex;
+                deleteState.hoveredBlockIndex = blockIndex;
+                updateHoverIndicator();
+                renderDeleteCanvas();
             }
         }
     });
@@ -502,7 +656,6 @@ function setupDeleteCanvasEvents() {
     // Mouse leave - clear highlight
     canvas.addEventListener('mouseleave', () => {
         deleteState.hoveredCodewordIndex = null;
-        deleteState.hoveredModuleKey = null;
         deleteState.hoveredBlockIndex = null;
         updateHoverIndicator();
         renderDeleteCanvas();
@@ -534,64 +687,82 @@ function setupDeleteCanvasEvents() {
         const row = Math.floor((y - offsetPixels) / modulePixelSize);
 
         if (row >= 0 && row < size && col >= 0 && col < size) {
-            if (deleteState.interactionMode === 'codeword') {
-                const codewordIndex = getCodewordIndexForModule(row, col);
-                if (codewordIndex !== null) {
-                    const blockIndex = getBlockIndexForCodeword(codewordIndex);
+            const codewordIndex = getCodewordIndexForModule(row, col);
+            if (codewordIndex === null) return;
 
-                    // Toggle deletion
-                    if (deleteState.deletedCodewords.has(codewordIndex)) {
-                        // Restore the codeword
-                        deleteState.deletedCodewords.delete(codewordIndex);
+            if (deleteState.editMode === 'delete') {
+                const blockIndex = getBlockIndexForCodeword(codewordIndex);
+
+                // Toggle deletion
+                if (deleteState.deletedCodewords.has(codewordIndex)) {
+                    // Restore the codeword
+                    deleteState.deletedCodewords.delete(codewordIndex);
+                    if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
+                        deleteState.blockInfo[blockIndex].deletedCount--;
+                    }
+                } else {
+                    // Check if we can delete from this block
+                    if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
+                        const block = deleteState.blockInfo[blockIndex];
+                        const maxErrors = Math.floor(block.eccCount / 2);
+
+                        if (block.deletedCount >= maxErrors) {
+                            // Beyond error correction capacity - require confirmation
+                            const confirmMsg = block.deletedCount >= maxErrors
+                                ? `Warning: Block ${blockIndex + 1} is at or beyond error correction capacity!\n\n` +
+                                  `Max correctable errors: ${maxErrors}\n` +
+                                  `Currently deleted: ${block.deletedCount}\n\n` +
+                                  `Deleting more codewords will likely make the QR code unscannable.\n\n` +
+                                  `Continue anyway?`
+                                : null;
+
+                            if (confirmMsg && !confirm(confirmMsg)) {
+                                return;
+                            }
+                        }
+                        deleteState.deletedCodewords.add(codewordIndex);
+                        block.deletedCount++;
+                    } else {
+                        deleteState.deletedCodewords.add(codewordIndex);
+                    }
+                }
+            } else {
+                const bitIndex = getBitIndexForModule(row, col, codewordIndex);
+                if (bitIndex === null || bitIndex < 0) return;
+
+                const originalByte = getOriginalCodewordByte(codewordIndex);
+                const currentByte = getModifiedCodewordByte(codewordIndex);
+                const toggledByte = currentByte ^ (1 << (7 - bitIndex));
+
+                if (toggledByte === originalByte) {
+                    if (deleteState.modifiedCodewords.has(codewordIndex)) {
+                        deleteState.modifiedCodewords.delete(codewordIndex);
+                        const blockIndex = getBlockIndexForCodeword(codewordIndex);
                         if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
                             deleteState.blockInfo[blockIndex].deletedCount--;
                         }
-                    } else {
-                        // Check if we can delete from this block
+                    }
+                } else {
+                    if (!deleteState.modifiedCodewords.has(codewordIndex)) {
+                        const blockIndex = getBlockIndexForCodeword(codewordIndex);
                         if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
-                            const block = deleteState.blockInfo[blockIndex];
-                            const maxErrors = Math.floor(block.eccCount / 2);
-
-                            if (block.deletedCount >= maxErrors) {
-                                // Beyond error correction capacity - require confirmation
-                                const confirmMsg = block.deletedCount >= maxErrors
-                                    ? `Warning: Block ${blockIndex + 1} is at or beyond error correction capacity!\n\n` +
-                                      `Max correctable errors: ${maxErrors}\n` +
-                                      `Currently deleted: ${block.deletedCount}\n\n` +
-                                      `Deleting more codewords will likely make the QR code unscannable.\n\n` +
-                                      `Continue anyway?`
-                                    : null;
-
-                                if (confirmMsg && !confirm(confirmMsg)) {
-                                    return;
-                                }
-                            }
-                            deleteState.deletedCodewords.add(codewordIndex);
-                            block.deletedCount++;
-                        } else {
-                            deleteState.deletedCodewords.add(codewordIndex);
+                            deleteState.blockInfo[blockIndex].deletedCount++;
                         }
                     }
-                    updateDeleteInfo();
-                    renderDeleteCanvas();
+                    deleteState.modifiedCodewords.set(codewordIndex, toggledByte);
                 }
-            } else {
-                // Module mode
-                const moduleKey = `${row},${col}`;
-                if (deleteState.deletedModules.has(moduleKey)) {
-                    deleteState.deletedModules.delete(moduleKey);
-                } else {
-                    deleteState.deletedModules.add(moduleKey);
-                }
-                updateDeleteInfo();
-                renderDeleteCanvas();
             }
+
+            updateDeleteInfo();
+            renderDeleteCanvas();
         }
     });
 
-    // Interaction mode
+    // Edit mode
     document.getElementById('deleteInteractionMode')?.addEventListener('change', (e) => {
-        deleteState.interactionMode = e.target.value;
+        deleteState.editMode = e.target.value;
+        refreshBlockCounts();
+        updateDeleteInfo();
         renderDeleteCanvas();
     });
 }
@@ -613,10 +784,11 @@ function updateHoverIndicator() {
         indicator.style.display = 'block';
         indicator.style.background = status.bgColor;
         indicator.style.borderLeft = `4px solid ${block.color}`;
+        const countLabel = deleteState.editMode === 'modify' ? 'modified' : 'deleted';
         indicator.innerHTML = `
             <div style="font-weight: bold; color: ${block.color};">Block ${deleteState.hoveredBlockIndex + 1}</div>
             <div style="font-size: 10px;">${codewordType} Codeword</div>
-            <div style="font-size: 10px; color: ${status.color}; font-weight: bold;">${block.deletedCount}/${maxErrors} deleted</div>
+            <div style="font-size: 10px; color: ${status.color}; font-weight: bold;">${block.deletedCount}/${maxErrors} ${countLabel}</div>
             <div style="font-size: 9px; color: ${status.color};">${status.label}</div>
         `;
     } else {
@@ -670,12 +842,16 @@ function getBlockDeletionStatus(deletedCount, eccCount) {
  * Update the delete info panel
  */
 function updateDeleteInfo() {
-    const deletedCount = deleteState.interactionMode === 'codeword'
-        ? deleteState.deletedCodewords.size
-        : Math.floor(deleteState.deletedModules.size / 8);
+    const deletedCount = deleteState.editMode === 'modify'
+        ? deleteState.modifiedCodewords.size
+        : deleteState.deletedCodewords.size;
 
     document.getElementById('deleteInfoTotalCodewords').textContent = deleteState.totalCodewords;
     document.getElementById('deleteInfoDeletedCount').textContent = deletedCount;
+    const labelEl = document.getElementById('deleteInfoCountLabel');
+    if (labelEl) {
+        labelEl.textContent = deleteState.editMode === 'modify' ? 'Total Modified:' : 'Total Deleted:';
+    }
 
     // Update block legend
     const blockLegend = document.getElementById('blockLegend');
@@ -719,13 +895,13 @@ function updateDeleteInfo() {
  * Reset all deletions
  */
 function resetAllDeletes() {
-    if (deleteState.deletedCodewords.size === 0 && deleteState.deletedModules.size === 0) {
+    if (deleteState.deletedCodewords.size === 0 && deleteState.modifiedCodewords.size === 0) {
         return;
     }
 
-    if (confirm('Reset all deletions?')) {
+    if (confirm('Reset all changes?')) {
         deleteState.deletedCodewords.clear();
-        deleteState.deletedModules.clear();
+        deleteState.modifiedCodewords.clear();
 
         // Reset block deleted counts
         if (deleteState.blockInfo) {
@@ -748,6 +924,10 @@ function initModuleDeleteEditor() {
         return;
     }
 
+    // Store the current mask pattern for applying to modified bits
+    const maskSelect = document.getElementById('maskPatternSelect');
+    deleteState.maskPattern = maskSelect ? parseInt(maskSelect.value) : 0;
+
     // Build codeword mapping
     deleteState.codewordMap = buildCodewordModuleMap();
 
@@ -758,20 +938,14 @@ function initModuleDeleteEditor() {
 
     // Don't clear deletions when switching tabs - they should persist
     deleteState.hoveredCodewordIndex = null;
-    deleteState.hoveredModuleKey = null;
+    deleteState.hoveredBlockIndex = null;
 
-    // Update block deleted counts based on current deletions
-    if (deleteState.blockInfo) {
-        deleteState.blockInfo.forEach(block => {
-            block.deletedCount = 0;
-        });
+    // Update block deleted counts based on current mode
+    refreshBlockCounts();
 
-        deleteState.deletedCodewords.forEach(codewordIndex => {
-            const blockIndex = getBlockIndexForCodeword(codewordIndex);
-            if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
-                deleteState.blockInfo[blockIndex].deletedCount++;
-            }
-        });
+    const modeSelect = document.getElementById('deleteInteractionMode');
+    if (modeSelect) {
+        modeSelect.value = deleteState.editMode;
     }
 
     // Update info panel

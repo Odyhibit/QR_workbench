@@ -706,6 +706,7 @@ function drawStyledModule(ctx, moduleX, moduleY, moduleWidth, moduleHeight, colo
 function drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, sizeFraction, moduleShape, isBackground) {
     const finderMiddleColor = sizeColorState.finderMiddleColor;
     const qrAreaSize = size * modulePixelSize;
+    const hasDeleteState = typeof deleteState !== 'undefined';
 
     for (let row = 0; row < size; row++) {
         for (let col = 0; col < size; col++) {
@@ -714,16 +715,14 @@ function drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, sizeFraction,
             // Skip finder patterns - drawn separately
             if (isFinderOnly) continue;
 
-            // Check if this module is deleted (from Module Delete tab)
-            if (typeof deleteState !== 'undefined' && typeof getCodewordIndexForModule === 'function') {
-                const moduleKey = `${row},${col}`;
-                const codewordIndex = getCodewordIndexForModule(row, col);
+            // Check if this module is deleted or modified (from Module Delete tab)
+            let codewordIndex = null;
+            if (hasDeleteState && typeof getCodewordIndexForModule === 'function') {
+                codewordIndex = getCodewordIndexForModule(row, col);
 
-                const isDeleted = (deleteState.interactionMode === 'codeword' &&
-                                  codewordIndex !== null &&
-                                  deleteState.deletedCodewords.has(codewordIndex)) ||
-                                 (deleteState.interactionMode === 'module' &&
-                                  deleteState.deletedModules.has(moduleKey));
+                const isDeleted = deleteState.editMode === 'delete' &&
+                    codewordIndex !== null &&
+                    deleteState.deletedCodewords.has(codewordIndex);
 
                 if (isDeleted) continue;
             }
@@ -737,7 +736,18 @@ function drawModuleLayer(ctx, modulePixelSize, offsetPixels, size, sizeFraction,
 
             const moduleX = offsetPixels + (col * modulePixelSize);
             const moduleY = offsetPixels + (row * modulePixelSize);
-            const isDark = currentMatrix[row][col];
+            let isDark = currentMatrix[row][col];
+            if (hasDeleteState &&
+                codewordIndex !== null &&
+                typeof getBitIndexForModule === 'function' &&
+                deleteState.modifiedCodewords &&
+                deleteState.modifiedCodewords.has(codewordIndex)) {
+                const bitIndex = getBitIndexForModule(row, col, codewordIndex);
+                if (bitIndex !== null && bitIndex >= 0) {
+                    const byteValue = deleteState.modifiedCodewords.get(codewordIndex);
+                    isDark = ((byteValue >> (7 - bitIndex)) & 1) === 1;
+                }
+            }
 
             // Determine size and shape
             let currentSizeFraction;

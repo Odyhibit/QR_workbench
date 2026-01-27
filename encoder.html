@@ -886,14 +886,14 @@
                 <h3 style="margin-top: 0;">Delete Info</h3>
                 <div class="control-group">
                     <div style="font-size: 11px; color: #666; margin-bottom: 10px;">
-                        Click codewords to delete them. Reed-Solomon ECC works per-block, so you can delete up to the ECC capacity of each block independently. Codewords are color-coded by block.
+                        Click codewords to delete or modify them. Reed-Solomon ECC works per-block, so you can change up to the ECC capacity of each block independently. Codewords are color-coded by block.
                     </div>
                     <div style="background: #f5f5f5; padding: 10px; border-radius: 4px; margin-bottom: 10px;">
                         <div style="margin-bottom: 5px;">
                             <strong>Total Codewords:</strong> <span id="deleteInfoTotalCodewords">0</span>
                         </div>
                         <div style="margin-bottom: 5px;">
-                            <strong>Total Deleted:</strong> <span id="deleteInfoDeletedCount">0</span>
+                            <strong id="deleteInfoCountLabel">Total Deleted:</strong> <span id="deleteInfoDeletedCount">0</span>
                         </div>
                     </div>
                     <div style="margin-bottom: 10px;">
@@ -905,20 +905,27 @@
                 </div>
 
                 <div class="control-group">
-                    <label>Interaction Mode:</label>
+                    <label>Edit Mode:</label>
                     <select id="deleteInteractionMode" style="width: 100%; padding: 5px;">
-                        <option value="codeword">Codeword - Click to delete 8 modules</option>
-                        <option value="module">Module - Click individual modules</option>
+                        <option value="delete">Delete - Click to delete 8 modules</option>
+                        <option value="modify">Modify - Click to toggle bits in a codeword</option>
                     </select>
                     <div style="font-size: 11px; color: #666; margin-top: 4px;">
-                        Codeword mode deletes all 8 modules at once
+                        Delete removes full codewords; Modify toggles bits by clicking modules
                     </div>
                 </div>
 
                 <div class="control-group">
                     <button onclick="resetAllDeletes()" style="width: 100%; padding: 8px; background: #ff6b6b; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 14px;">
-                        Reset All Deletions
+                        Reset
                     </button>
+                </div>
+
+                <div class="control-group">
+                    <button class="mark-button" onclick="downloadDeleteCanvasClean()">Download PNG (clean)</button>
+                    <div style="font-size: 11px; color: #666; margin-top: 4px;">
+                        Exports without hover or deletion overlays
+                    </div>
                 </div>
             </div>
         </div>
@@ -927,7 +934,7 @@
             <div class="canvas-container">
                 <h2>Module Delete Editor</h2>
                 <p style="color: #666; margin-bottom: 10px;">
-                    Hover to see block colors. Click to delete/restore codewords. Each block shown in legend can have deletions up to its ECC capacity.
+                    Hover to see block colors. Click to delete or modify codewords. Each block shown in legend can handle changes up to its ECC capacity.
                 </p>
                 <div style="position: relative; display: inline-block;">
                     <canvas id="deleteCanvas" width="600" height="600" style="border: 1px solid #ddd; background: white; display: block; cursor: crosshair;"></canvas>
