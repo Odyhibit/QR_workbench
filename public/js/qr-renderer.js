@@ -10,16 +10,19 @@ const QRRenderer = {
         logoX: 50, // percentage position
         logoY: 50,
         logoScale: 100,
-        moduleShape: 'square', // 'square', 'circle', 'rounded', 'diamond', 'cushion'
+        moduleShape: 'cushion', // 'square', 'circle', 'rounded', 'diamond', 'cushion'
         moduleSize: 80, // percentage (20-100)
-        colorMode: 'default', // 'default', 'palette', 'gradient'
+        colorMode: 'palette', // 'default', 'palette', 'gradient'
         darkPalette: ['#000000', '#333333', '#1a1a1a', '#0d0d0d'],
         lightPalette: ['#ffffff', '#f0f0f0', '#e0e0e0', '#d0d0d0'],
         darkMaxLuminosity: 33,
         lightMinLuminosity: 66,
-        quietZone: 4,
-        finderShape: 'square', // 'square', 'circle', 'hybrid', 'hybrid-inverse', 'rounded'
-        backgroundFill: 'transparent' // 'transparent', 'light', 'dark'
+        quietZone: 2,
+        finderShape: 'rounded', // 'square', 'circle', 'hybrid', 'hybrid-inverse', 'rounded'
+        finderOuterColor: '#000000',
+        finderMiddleColor: '#ffffff',
+        finderCenterColor: '#000000',
+        backgroundFill: 'light' // 'light', 'dark'
     },
 
     /**
@@ -68,7 +71,7 @@ const QRRenderer = {
         this.state.logoY = 50;
         this.state.darkPalette = ['#000000', '#333333', '#1a1a1a', '#0d0d0d'];
         this.state.lightPalette = ['#ffffff', '#f0f0f0', '#e0e0e0', '#d0d0d0'];
-        this.state.backgroundFill = 'transparent';
+        this.state.backgroundFill = 'light';
     },
 
     /**
@@ -189,7 +192,7 @@ const QRRenderer = {
             // Outside logo or transparent - use default
             if (this.state.colorMode === 'palette') {
                 const palette = isDark ? this.state.darkPalette : this.state.lightPalette;
-                return palette[1] || palette[0];
+                return palette[0];
             }
             sampledRgba = isDark ? [0, 0, 0, 255] : [255, 255, 255, 255];
         }
@@ -198,13 +201,14 @@ const QRRenderer = {
 
         if (this.state.colorMode === 'gradient') {
             const hsl = ColorUtils.rgbToHsl(sampledRgb[0], sampledRgb[1], sampledRgb[2]);
+            const sampledLuminosity = hsl.l;
 
             if (isDark) {
-                if (hsl.l > this.state.darkMaxLuminosity) {
+                if (sampledLuminosity > this.state.darkMaxLuminosity && hsl.l > this.state.darkMaxLuminosity) {
                     hsl.l = this.state.darkMaxLuminosity;
                 }
             } else {
-                if (hsl.l < this.state.lightMinLuminosity) {
+                if (sampledLuminosity < this.state.lightMinLuminosity && hsl.l < this.state.lightMinLuminosity) {
                     hsl.l = this.state.lightMinLuminosity;
                 }
             }
@@ -275,12 +279,15 @@ const QRRenderer = {
             ctx.quadraticCurveTo(centerX - halfWidth * concaveFactor, centerY - halfHeight * concaveFactor, top.x, top.y);
             ctx.fill();
         } else if (shape === 'diamond') {
-            ctx.save();
-            ctx.translate(centerX, centerY);
-            ctx.rotate(Math.PI / 4);
-            const halfSize = Math.min(shrunkWidth, shrunkHeight) / 2;
-            ctx.fillRect(-halfSize, -halfSize, halfSize * 2, halfSize * 2);
-            ctx.restore();
+            const halfW = shrunkWidth / 2;
+            const halfH = shrunkHeight / 2;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY - halfH);
+            ctx.lineTo(centerX + halfW, centerY);
+            ctx.lineTo(centerX, centerY + halfH);
+            ctx.lineTo(centerX - halfW, centerY);
+            ctx.closePath();
+            ctx.fill();
         } else {
             ctx.fillRect(x + offsetX, y + offsetY, shrunkWidth, shrunkHeight);
         }
@@ -289,7 +296,7 @@ const QRRenderer = {
     /**
      * Draw finder pattern
      */
-    drawFinder(ctx, startRow, startCol, moduleSize, offset, darkColor, lightColor, sizeFraction, matrixSize) {
+    drawFinder(ctx, startRow, startCol, moduleSize, offset, outerColor, middleColor, centerColor, sizeFraction, matrixSize) {
         const centerModuleX = startCol + 3.5;
         const centerModuleY = startRow + 3.5;
         const centerX = offset + (centerModuleX * moduleSize);
@@ -313,24 +320,24 @@ const QRRenderer = {
         const thicknessBoost = 0.08;
 
         if (this.state.finderShape === 'circle') {
-            ctx.fillStyle = darkColor;
+            ctx.fillStyle = outerColor;
             ctx.beginPath();
             ctx.arc(centerX, centerY, (3.5 + thicknessBoost) * moduleSize, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.fillStyle = lightColor;
+            ctx.fillStyle = middleColor;
             ctx.beginPath();
             ctx.arc(centerX, centerY, (2.5 - thicknessBoost * 0.5) * moduleSize, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.fillStyle = darkColor;
+            ctx.fillStyle = centerColor;
             ctx.beginPath();
             ctx.arc(centerX, centerY, 1.5 * moduleSize, 0, Math.PI * 2);
             ctx.fill();
         } else if (this.state.finderShape === 'rounded') {
             const roundingPercent = 0.10;
 
-            ctx.fillStyle = darkColor;
+            ctx.fillStyle = outerColor;
             const outerX = offset + (startCol * moduleSize);
             const outerY = offset + (startRow * moduleSize);
             const outerSize = 7 * moduleSize;
@@ -338,7 +345,7 @@ const QRRenderer = {
             ctx.roundRect(outerX, outerY, outerSize, outerSize, outerSize * roundingPercent);
             ctx.fill();
 
-            ctx.fillStyle = lightColor;
+            ctx.fillStyle = middleColor;
             const middleX = offset + ((startCol + 1) * moduleSize);
             const middleY = offset + ((startRow + 1) * moduleSize);
             const middleSize = 5 * moduleSize;
@@ -346,7 +353,7 @@ const QRRenderer = {
             ctx.roundRect(middleX, middleY, middleSize, middleSize, middleSize * roundingPercent);
             ctx.fill();
 
-            ctx.fillStyle = darkColor;
+            ctx.fillStyle = centerColor;
             const innerX = offset + ((startCol + 2) * moduleSize);
             const innerY = offset + ((startRow + 2) * moduleSize);
             const innerSize = 3 * moduleSize;
@@ -354,51 +361,51 @@ const QRRenderer = {
             ctx.roundRect(innerX, innerY, innerSize, innerSize, innerSize * roundingPercent);
             ctx.fill();
         } else if (this.state.finderShape === 'hybrid') {
-            ctx.fillStyle = darkColor;
+            ctx.fillStyle = outerColor;
             ctx.beginPath();
             ctx.arc(centerX, centerY, (3.5 + thicknessBoost) * moduleSize, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.fillStyle = lightColor;
+            ctx.fillStyle = middleColor;
             ctx.beginPath();
             ctx.arc(centerX, centerY, (2.5 - thicknessBoost * 0.5) * moduleSize, 0, Math.PI * 2);
             ctx.fill();
 
-            ctx.fillStyle = darkColor;
+            ctx.fillStyle = centerColor;
             const innerSize = 3 * moduleSize;
             const innerX = offset + ((startCol + 2) * moduleSize);
             const innerY = offset + ((startRow + 2) * moduleSize);
             ctx.fillRect(innerX, innerY, innerSize, innerSize);
         } else if (this.state.finderShape === 'hybrid-inverse') {
-            ctx.fillStyle = darkColor;
+            ctx.fillStyle = outerColor;
             const outerX = offset + (startCol * moduleSize) - (thicknessBoost * moduleSize);
             const outerY = offset + (startRow * moduleSize) - (thicknessBoost * moduleSize);
             const outerSize = (7 + thicknessBoost * 2) * moduleSize;
             ctx.fillRect(outerX, outerY, outerSize, outerSize);
 
-            ctx.fillStyle = lightColor;
+            ctx.fillStyle = middleColor;
             const middleX = offset + ((startCol + 1) * moduleSize) + (thicknessBoost * 0.5 * moduleSize);
             const middleY = offset + ((startRow + 1) * moduleSize) + (thicknessBoost * 0.5 * moduleSize);
             const middleSize = (5 - thicknessBoost) * moduleSize;
             ctx.fillRect(middleX, middleY, middleSize, middleSize);
 
-            ctx.fillStyle = darkColor;
+            ctx.fillStyle = centerColor;
             ctx.beginPath();
             ctx.arc(centerX, centerY, 1.5 * moduleSize, 0, Math.PI * 2);
             ctx.fill();
         } else {
             // Square
-            ctx.fillStyle = darkColor;
+            ctx.fillStyle = outerColor;
             const outerX = offset + (startCol * moduleSize);
             const outerY = offset + (startRow * moduleSize);
             ctx.fillRect(outerX, outerY, 7 * moduleSize, 7 * moduleSize);
 
-            ctx.fillStyle = lightColor;
+            ctx.fillStyle = middleColor;
             const middleX = offset + ((startCol + 1) * moduleSize);
             const middleY = offset + ((startRow + 1) * moduleSize);
             ctx.fillRect(middleX, middleY, 5 * moduleSize, 5 * moduleSize);
 
-            ctx.fillStyle = darkColor;
+            ctx.fillStyle = centerColor;
             const innerX = offset + ((startCol + 2) * moduleSize);
             const innerY = offset + ((startRow + 2) * moduleSize);
             ctx.fillRect(innerX, innerY, 3 * moduleSize, 3 * moduleSize);
@@ -424,9 +431,7 @@ const QRRenderer = {
         ctx.clearRect(0, 0, canvasSize, canvasSize);
 
         // Fill background based on backgroundFill setting
-        if (this.state.backgroundFill === 'transparent') {
-            ctx.fillStyle = 'white';
-        } else if (this.state.backgroundFill === 'dark') {
+        if (this.state.backgroundFill === 'dark') {
             ctx.fillStyle = this.state.darkPalette[0] || '#000000';
         } else {
             ctx.fillStyle = this.state.lightPalette[0] || '#ffffff';
@@ -443,13 +448,10 @@ const QRRenderer = {
 
         const sizeFraction = this.state.moduleSize / 100;
 
-        // Get finder colors
-        let finderDarkColor = '#000000';
-        let finderLightColor = '#ffffff';
-        if (this.state.colorMode !== 'default' && this.state.logoImg) {
-            finderDarkColor = this.state.darkPalette[0];
-            finderLightColor = this.state.lightPalette[0];
-        }
+        // Get finder colors (always from dedicated finder color pickers)
+        const finderOuter = this.state.finderOuterColor;
+        const finderMiddle = this.state.finderMiddleColor;
+        const finderCenter = this.state.finderCenterColor;
 
         // Draw data modules (skip finder patterns)
         for (let row = 0; row < size; row++) {
@@ -470,9 +472,9 @@ const QRRenderer = {
         }
 
         // Draw finder patterns
-        this.drawFinder(ctx, 0, 0, moduleSize, offset, finderDarkColor, finderLightColor, sizeFraction, size);
-        this.drawFinder(ctx, 0, size - 7, moduleSize, offset, finderDarkColor, finderLightColor, sizeFraction, size);
-        this.drawFinder(ctx, size - 7, 0, moduleSize, offset, finderDarkColor, finderLightColor, sizeFraction, size);
+        this.drawFinder(ctx, 0, 0, moduleSize, offset, finderOuter, finderMiddle, finderCenter, sizeFraction, size);
+        this.drawFinder(ctx, 0, size - 7, moduleSize, offset, finderOuter, finderMiddle, finderCenter, sizeFraction, size);
+        this.drawFinder(ctx, size - 7, 0, moduleSize, offset, finderOuter, finderMiddle, finderCenter, sizeFraction, size);
     },
 
     /**
@@ -494,9 +496,7 @@ const QRRenderer = {
         // Clear canvas with white or background fill color
         ctx.clearRect(0, 0, canvasSize, canvasSize);
 
-        if (this.state.backgroundFill === 'transparent') {
-            ctx.fillStyle = 'white';
-        } else if (this.state.backgroundFill === 'dark') {
+        if (this.state.backgroundFill === 'dark') {
             ctx.fillStyle = this.state.darkPalette[0] || '#000000';
         } else {
             ctx.fillStyle = this.state.lightPalette[0] || '#ffffff';
@@ -530,6 +530,240 @@ const QRRenderer = {
         }
 
         ctx.globalAlpha = 1.0;
+    },
+
+    /**
+     * Render for painting mode - shows editable vs locked cells with grid
+     */
+    renderForPainting(canvas, matrix, version, editableCells, paddingEdits, logoOpacity = 0.4) {
+        if (!matrix) return;
+
+        const ctx = canvas.getContext('2d');
+        const canvasSize = canvas.width;
+        const size = matrix.length;
+        const quietZone = this.state.quietZone;
+        const totalSize = size + (quietZone * 2);
+        const moduleSize = canvasSize / totalSize;
+        const offset = quietZone * moduleSize;
+        const qrAreaSize = size * moduleSize;
+
+        // Clear canvas with background
+        ctx.clearRect(0, 0, canvasSize, canvasSize);
+
+        if (this.state.backgroundFill === 'dark') {
+            ctx.fillStyle = this.state.darkPalette[0] || '#000000';
+        } else {
+            ctx.fillStyle = this.state.lightPalette[0] || '#ffffff';
+        }
+        ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+        // Draw logo at partial opacity
+        if (this.state.logoImg) {
+            ctx.globalAlpha = logoOpacity;
+            this.drawLogoBackground(ctx, offset, offset, qrAreaSize);
+            ctx.globalAlpha = 1.0;
+        }
+
+        // Quiet zone overlay
+        this.drawQuietZoneOverlay(ctx, canvasSize, moduleSize, quietZone);
+
+        const sizeFraction = 0.85;
+
+        // Draw modules with editable/locked distinction
+        for (let row = 0; row < size; row++) {
+            for (let col = 0; col < size; col++) {
+                const moduleX = offset + (col * moduleSize);
+                const moduleY = offset + (row * moduleSize);
+                const cellKey = `${row},${col}`;
+                const isEditable = editableCells.has(cellKey);
+
+                // Determine module value (check paddingEdits override)
+                let isDark;
+                if (paddingEdits.has(cellKey)) {
+                    isDark = paddingEdits.get(cellKey);
+                } else {
+                    isDark = matrix[row][col];
+                }
+
+                if (isEditable) {
+                    // Editable cells: full opacity
+                    ctx.globalAlpha = 0.85;
+                    const color = isDark ? '#000000' : '#ffffff';
+                    this.drawModule(ctx, moduleX, moduleY, moduleSize, moduleSize, color, 'square', sizeFraction);
+                    ctx.globalAlpha = 1.0;
+                } else {
+                    // Locked cells: reduced opacity + gray tint
+                    ctx.globalAlpha = 0.55;
+                    const color = isDark ? '#000000' : '#ffffff';
+                    this.drawModule(ctx, moduleX, moduleY, moduleSize, moduleSize, color, 'square', sizeFraction);
+                    ctx.globalAlpha = 1.0;
+
+                    // Gray overlay tint
+                    ctx.fillStyle = 'rgba(180, 180, 180, 0.35)';
+                    const shrunk = moduleSize * sizeFraction;
+                    const off = (moduleSize - shrunk) / 2;
+                    ctx.fillRect(moduleX + off, moduleY + off, shrunk, shrunk);
+                }
+            }
+        }
+
+        // Draw subtle grid lines between modules
+        ctx.strokeStyle = 'rgba(200, 200, 200, 0.4)';
+        ctx.lineWidth = 0.5;
+        for (let i = 0; i <= size; i++) {
+            const x = offset + i * moduleSize;
+            ctx.beginPath();
+            ctx.moveTo(x, offset);
+            ctx.lineTo(x, offset + size * moduleSize);
+            ctx.stroke();
+
+            const y = offset + i * moduleSize;
+            ctx.beginPath();
+            ctx.moveTo(offset, y);
+            ctx.lineTo(offset + size * moduleSize, y);
+            ctx.stroke();
+        }
+    },
+
+    /**
+     * Draw a highlight border around a cell (for hover effect)
+     */
+    drawCellHighlight(canvas, row, col, size, quietZone) {
+        const ctx = canvas.getContext('2d');
+        const canvasSize = canvas.width;
+        const totalSize = size + (quietZone * 2);
+        const moduleSize = canvasSize / totalSize;
+        const offset = quietZone * moduleSize;
+
+        const x = offset + col * moduleSize;
+        const y = offset + row * moduleSize;
+
+        ctx.strokeStyle = 'rgba(79, 70, 229, 0.8)';
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x + 1, y + 1, moduleSize - 2, moduleSize - 2);
+    },
+
+    /**
+     * Render with codeword deletion support
+     * deleteState: { deletedCodewords, hoveredCodewordIndex, codewordMap, blockInfo, blockColors, reverseMap }
+     * options: { showOverlays: true }
+     */
+    renderWithDeletion(canvas, matrix, version, deleteState, options = {}) {
+        if (!matrix) return;
+
+        const showOverlays = options.showOverlays !== false;
+        const ctx = canvas.getContext('2d');
+        const canvasSize = canvas.width;
+        const size = matrix.length;
+        const quietZone = this.state.quietZone;
+        const totalSize = size + (quietZone * 2);
+        const moduleSize = canvasSize / totalSize;
+        const offset = quietZone * moduleSize;
+        const qrAreaSize = size * moduleSize;
+
+        // Clear canvas
+        ctx.clearRect(0, 0, canvasSize, canvasSize);
+
+        // Fill background
+        if (this.state.backgroundFill === 'dark') {
+            ctx.fillStyle = this.state.darkPalette[0] || '#000000';
+        } else {
+            ctx.fillStyle = this.state.lightPalette[0] || '#ffffff';
+        }
+        ctx.fillRect(0, 0, canvasSize, canvasSize);
+
+        // Draw logo background
+        if (this.state.logoImg) {
+            this.drawLogoBackground(ctx, offset, offset, qrAreaSize);
+        }
+
+        // Quiet zone overlay
+        this.drawQuietZoneOverlay(ctx, canvasSize, moduleSize, quietZone);
+
+        const sizeFraction = this.state.moduleSize / 100;
+
+        // Get finder colors (always from dedicated finder color pickers)
+        const finderOuter = this.state.finderOuterColor;
+        const finderMiddle = this.state.finderMiddleColor;
+        const finderCenter = this.state.finderCenterColor;
+
+        // Draw data modules (skip finder, separator, and deleted)
+        for (let row = 0; row < size; row++) {
+            for (let col = 0; col < size; col++) {
+                if (this.isFinderPattern(row, col, size)) continue;
+                if (this.isSeparator(row, col, size)) continue;
+
+                // Check if module belongs to a deleted codeword
+                const cellKey = `${row},${col}`;
+                if (deleteState.reverseMap) {
+                    const cwIdx = deleteState.reverseMap.get(cellKey);
+                    if (cwIdx !== undefined && deleteState.deletedCodewords.has(cwIdx)) {
+                        continue; // Skip deleted modules
+                    }
+                }
+
+                const moduleX = offset + (col * moduleSize);
+                const moduleY = offset + (row * moduleSize);
+                const isDark = matrix[row][col];
+
+                const moduleCenterX = (col * moduleSize) + moduleSize / 2;
+                const moduleCenterY = (row * moduleSize) + moduleSize / 2;
+                const color = this.getModuleColor(moduleCenterX, moduleCenterY, isDark, qrAreaSize);
+
+                this.drawModule(ctx, moduleX, moduleY, moduleSize, moduleSize, color, this.state.moduleShape, sizeFraction);
+            }
+        }
+
+        // Draw finder patterns
+        this.drawFinder(ctx, 0, 0, moduleSize, offset, finderOuter, finderMiddle, finderCenter, sizeFraction, size);
+        this.drawFinder(ctx, 0, size - 7, moduleSize, offset, finderOuter, finderMiddle, finderCenter, sizeFraction, size);
+        this.drawFinder(ctx, size - 7, 0, moduleSize, offset, finderOuter, finderMiddle, finderCenter, sizeFraction, size);
+
+        // Draw overlays if requested
+        if (showOverlays && deleteState.reverseMap) {
+            for (let row = 0; row < size; row++) {
+                for (let col = 0; col < size; col++) {
+                    const cellKey = `${row},${col}`;
+                    const cwIdx = deleteState.reverseMap.get(cellKey);
+                    if (cwIdx === undefined) continue;
+
+                    const isDeleted = deleteState.deletedCodewords.has(cwIdx);
+                    const isHovered = cwIdx === deleteState.hoveredCodewordIndex;
+
+                    if (!isDeleted && !isHovered) continue;
+
+                    const moduleX = offset + (col * moduleSize);
+                    const moduleY = offset + (row * moduleSize);
+
+                    // Red outline for deleted (non-hovered)
+                    if (isDeleted && !isHovered) {
+                        ctx.strokeStyle = '#ff0000';
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(moduleX + 1, moduleY + 1, moduleSize - 2, moduleSize - 2);
+                    }
+
+                    // Block-color outline for hovered
+                    if (isHovered) {
+                        let strokeColor = '#ffff00';
+                        const blockIndex = deleteState.codewordMap.get(cwIdx)?.blockIndex;
+                        if (blockIndex !== undefined && deleteState.blockInfo[blockIndex]) {
+                            strokeColor = deleteState.blockInfo[blockIndex].color;
+                        }
+
+                        ctx.strokeStyle = strokeColor;
+                        ctx.lineWidth = 2;
+                        ctx.strokeRect(moduleX + 1, moduleY + 1, moduleSize - 2, moduleSize - 2);
+
+                        // Inner red outline if also deleted
+                        if (isDeleted) {
+                            ctx.strokeStyle = '#ff0000';
+                            ctx.lineWidth = 1;
+                            ctx.strokeRect(moduleX + 3, moduleY + 3, moduleSize - 6, moduleSize - 6);
+                        }
+                    }
+                }
+            }
+        }
     },
 
     /**

@@ -287,45 +287,33 @@ function getSizeColorModuleColor(canvasX, canvasY, isDark, canvasSize) {
     let sampledRgba = sampleSizeColorLogo(canvasX, canvasY, canvasSize);
 
     if (!sampledRgba) {
-        // Outside logo - use transparentTreatment setting
-        // 'transparent' and 'light' both show light background, 'dark' shows dark
-        const treatAsLight = sizeColorState.transparentTreatment !== 'dark';
-        if (sizeColorState.colorMode === 'palette') {
-            // In palette mode, keep dark/light module intent but use background slot (position 0).
-            const palette = isDark ? sizeColorState.darkPalette : sizeColorState.lightPalette;
-            return palette[0];
-        }
-        // Gradient mode: fall through with a default sampled color.
-        sampledRgba = treatAsLight ? [255, 255, 255, 255] : [0, 0, 0, 255];
+        // Outside logo - use palette background colors directly
+        const palette = isDark ? sizeColorState.darkPalette : sizeColorState.lightPalette;
+        return palette[0];
     }
 
     // Check if pixel is transparent (alpha < 128)
     const alpha = sampledRgba[3];
     if (alpha < 128) {
-        // Transparent pixel - use transparentTreatment setting
-        // 'transparent' and 'light' both show light background, 'dark' shows dark
-        const treatAsLight = sizeColorState.transparentTreatment !== 'dark';
-        if (sizeColorState.colorMode === 'palette') {
-            const palette = isDark ? sizeColorState.darkPalette : sizeColorState.lightPalette;
-            return palette[0];
-        }
-        // Gradient mode: fall through with a default sampled color.
-        sampledRgba = treatAsLight ? [255, 255, 255, 255] : [0, 0, 0, 255];
+        // Transparent pixel - use palette background colors directly
+        const palette = isDark ? sizeColorState.darkPalette : sizeColorState.lightPalette;
+        return palette[0];
     }
 
     const sampledRgb = [sampledRgba[0], sampledRgba[1], sampledRgba[2]];
-    const sampledLuminance = 0.299 * sampledRgb[0] + 0.587 * sampledRgb[1] + 0.114 * sampledRgb[2];
-
     if (sizeColorState.colorMode === 'gradient') {
         // Use logo color with brightness adjustment
         const hsl = rgbToHsl(sampledRgb[0], sampledRgb[1], sampledRgb[2]);
+        const sampledLuminosity = hsl.l;
 
         if (isDark) {
-            if (hsl.l > sizeColorState.darkMaxLuminosity) {
+            if (sampledLuminosity > sizeColorState.darkMaxLuminosity &&
+                hsl.l > sizeColorState.darkMaxLuminosity) {
                 hsl.l = sizeColorState.darkMaxLuminosity;
             }
         } else {
-            if (hsl.l < sizeColorState.lightMinLuminosity) {
+            if (sampledLuminosity < sizeColorState.lightMinLuminosity &&
+                hsl.l < sizeColorState.lightMinLuminosity) {
                 hsl.l = sizeColorState.lightMinLuminosity;
             }
         }
@@ -621,8 +609,9 @@ function drawCustomFinderPattern(ctx, startRow, startCol, modulePixelSize, offse
 function drawStyledModule(ctx, moduleX, moduleY, moduleWidth, moduleHeight, color, shape, sizeFraction, isFinder = false) {
     ctx.fillStyle = color;
 
-    // For finder patterns, add a tiny overlap to eliminate grid lines
-    const overlap = isFinder ? 0.5 : 0;
+    // Add a tiny overlap to eliminate grid lines between adjacent modules
+    // Applied for finder patterns and when modules fully tile (sizeFraction >= 1.0)
+    const overlap = (isFinder || sizeFraction >= 1.0) ? 0.5 : 0;
 
     const shrunkWidth = moduleWidth * sizeFraction;
     const shrunkHeight = moduleHeight * sizeFraction;

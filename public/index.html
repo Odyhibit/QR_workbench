@@ -29,7 +29,12 @@
             <div class="step-divider"></div>
             <button class="step-btn" data-step="3">
                 <span class="step-num">3</span>
-                <span class="step-label">Style & Export</span>
+                <span class="step-label">Style</span>
+            </button>
+            <div class="step-divider"></div>
+            <button class="step-btn" data-step="4">
+                <span class="step-num">4</span>
+                <span class="step-label">Export</span>
             </button>
         </nav>
 
@@ -100,12 +105,6 @@
                 </form>
             </div>
 
-            <!-- Preview (small) -->
-            <div class="preview-small">
-                <canvas id="previewCanvas" width="200" height="200"></canvas>
-                <p class="preview-hint">QR code preview</p>
-            </div>
-
             <!-- Next Button -->
             <div class="step-actions">
                 <button type="button" class="btn btn-primary" id="nextBtn1">
@@ -113,13 +112,34 @@
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
                 </button>
             </div>
+
+
+            <!-- Preview (small) -->
+            <div class="preview-small">
+                <canvas id="previewCanvas" width="200" height="200"></canvas>
+                <p class="preview-hint">QR code preview</p>
+            </div>
         </section>
+
 
         <!-- Step 2: Logo (Optional) -->
         <section id="step2" class="step-section">
             <div class="logo-step-layout">
                 <!-- Logo Canvas -->
                 <div class="logo-canvas-container">
+                    <!-- Paint mode controls (hidden until editable cells exist) -->
+                    <div id="paintModeControls" class="paint-mode-controls" style="display: none;">
+                        <div class="mode-toggle">
+                            <button type="button" class="mode-btn active" data-mode="logo">Move Logo</button>
+                            <button type="button" class="mode-btn" data-mode="paint">Paint Modules</button>
+                        </div>
+                        <div id="brushControls" class="brush-controls" style="display: none;">
+                            <button type="button" class="brush-btn active" data-brush="black" title="Black">&#9632;</button>
+                            <button type="button" class="brush-btn" data-brush="white" title="White">&#9633;</button>
+                            <button type="button" class="brush-btn brush-reset" id="resetPaintBtn" title="Reset edits">Reset</button>
+                        </div>
+                        <span id="modeHint" class="mode-hint">Drag to move logo</span>
+                    </div>
                     <canvas id="logoCanvas" width="450" height="450"></canvas>
                     <p class="canvas-hint" id="logoCanvasHint">Upload a logo to position it on the QR code</p>
                 </div>
@@ -141,24 +161,10 @@
                             <input type="range" id="logoScale" min="20" max="150" value="100">
                         </div>
 
-                        <div class="control-group">
-                            <label>Background Fill</label>
-                            <p class="control-hint">What shows through transparent QR areas</p>
-                            <select id="backgroundFill">
-                                <option value="transparent">Transparent</option>
-                                <option value="light">Light (from logo)</option>
-                                <option value="dark">Dark (from logo)</option>
-                            </select>
-                        </div>
-
-                        <p class="drag-hint">
-                            <svg viewBox="0 0 24 24" fill="currentColor" width="16" height="16"><path d="M10 9h4V6h3l-5-5-5 5h3v3zm-1 1H6V7l-5 5 5 5v-3h3v-4zm14 2l-5-5v3h-3v4h3v3l5-5zm-9 3h-4v3H7l5 5 5-5h-3v-3z"/></svg>
-                            Drag the logo on the canvas to reposition
-                        </p>
                     </div>
 
                     <!-- Canvas Size (always visible) -->
-                    <div class="control-group" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid var(--border);">
+                    <div class="control-group">
                         <label>Canvas Size</label>
                         <p class="control-hint">Larger sizes allow bigger logos</p>
                         <select id="versionSelect">
@@ -180,17 +186,6 @@
                             <option value="M" selected>Medium (15% recovery)</option>
                             <option value="Q">Quartile (25% recovery)</option>
                             <option value="H">High (30% recovery)</option>
-                        </select>
-                    </div>
-
-                    <!-- Module Color Mode (only when logo loaded) -->
-                    <div id="moduleColorMode" class="control-group" style="display: none;">
-                        <label>Module Colors</label>
-                        <p class="control-hint">Match QR modules to logo colors</p>
-                        <select id="colorMode">
-                            <option value="default">Black & White</option>
-                            <option value="palette">Palette from Logo</option>
-                            <option value="gradient">Gradient from Logo</option>
                         </select>
                     </div>
 
@@ -237,7 +232,7 @@
                     <div class="control-group">
                         <h3>Module Shape</h3>
                         <div class="shape-selector">
-                            <button class="shape-btn active" data-shape="square" title="Square">
+                            <button class="shape-btn" data-shape="square" title="Square">
                                 <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" fill="currentColor"/></svg>
                             </button>
                             <button class="shape-btn" data-shape="circle" title="Circle">
@@ -249,8 +244,8 @@
                             <button class="shape-btn" data-shape="diamond" title="Diamond">
                                 <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" transform="rotate(45 12 12)" fill="currentColor"/></svg>
                             </button>
-                            <button class="shape-btn" data-shape="cushion" title="Cushion">
-                                <svg viewBox="0 0 24 24"><path d="M12 4 L18 10 Q19 12 18 14 L12 20 L6 14 Q5 12 6 10 Z" fill="currentColor"/></svg>
+                            <button class="shape-btn active" data-shape="cushion" title="Cushion">
+                                <svg viewBox="0 0 24 24"><path d="M12 4 Q14.8 9.2 20 12 Q14.8 14.8 12 20 Q9.2 14.8 4 12 Q9.2 9.2 12 4Z" fill="currentColor"/></svg>
                             </button>
                         </div>
                     </div>
@@ -258,35 +253,158 @@
                     <!-- Finder Shape -->
                     <div class="control-group">
                         <h3>Finder Shape</h3>
-                        <select id="finderShape">
-                            <option value="square">Square</option>
-                            <option value="rounded">Rounded</option>
-                            <option value="circle">Circle</option>
-                            <option value="hybrid">Hybrid (Circle + Square)</option>
-                            <option value="hybrid-inverse">Hybrid Inverse</option>
-                        </select>
+                        <div class="shape-selector">
+                            <button class="shape-btn finder-shape-btn" data-finder="square" title="Square">
+                                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" fill="currentColor"/><rect x="6" y="6" width="12" height="12" fill="white"/><rect x="8" y="8" width="8" height="8" fill="currentColor"/></svg>
+                            </button>
+                            <button class="shape-btn finder-shape-btn active" data-finder="rounded" title="Rounded">
+                                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" fill="currentColor"/><rect x="6" y="6" width="12" height="12" rx="1.5" fill="white"/><rect x="8" y="8" width="8" height="8" rx="1" fill="currentColor"/></svg>
+                            </button>
+                            <button class="shape-btn finder-shape-btn" data-finder="circle" title="Circle">
+                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"/><circle cx="12" cy="12" r="7" fill="white"/><circle cx="12" cy="12" r="4.5" fill="currentColor"/></svg>
+                            </button>
+                            <button class="shape-btn finder-shape-btn" data-finder="hybrid" title="Hybrid">
+                                <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"/><circle cx="12" cy="12" r="7" fill="white"/><rect x="8" y="8" width="8" height="8" fill="currentColor"/></svg>
+                            </button>
+                            <button class="shape-btn finder-shape-btn" data-finder="hybrid-inverse" title="Hybrid Inverse">
+                                <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" fill="currentColor"/><rect x="6" y="6" width="12" height="12" fill="white"/><circle cx="12" cy="12" r="4.5" fill="currentColor"/></svg>
+                            </button>
+                        </div>
+                        <div class="finder-colors">
+                            <div class="finder-color-swatch">
+                                <input type="color" id="finderOuterColor" value="#000000">
+                                <span>Outer</span>
+                            </div>
+                            <div class="finder-color-swatch">
+                                <input type="color" id="finderMiddleColor" value="#ffffff">
+                                <span>Middle</span>
+                            </div>
+                            <div class="finder-color-swatch">
+                                <input type="color" id="finderCenterColor" value="#000000">
+                                <span>Center</span>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Module Size -->
                     <div class="control-group">
                         <h3>Module Size: <span id="moduleSizeValue">80</span>%</h3>
-                        <p class="control-hint">Smaller modules reveal more logo</p>
                         <input type="range" id="moduleSize" min="20" max="100" value="80">
                     </div>
 
+                    <!-- Module Colors (visible when logo loaded) -->
+                    <div id="moduleColorMode" class="control-group" style="display: none;">
+                        <h3>Module Colors</h3>
+                        <select id="colorMode">
+                            <option value="default">Black & White</option>
+                            <option value="palette" selected>Palette from Logo</option>
+                            <option value="gradient">Gradient from Logo</option>
+                        </select>
+
+                        <!-- Palette Color Pickers (shown when palette mode) -->
+                        <div id="paletteDisplay" class="palette-display" style="display: none;">
+                            <div class="palette-row">
+                                <span class="palette-label">Dark</span>
+                                <input type="color" class="palette-picker" data-type="dark" data-index="0">
+                                <input type="color" class="palette-picker" data-type="dark" data-index="1">
+                                <input type="color" class="palette-picker" data-type="dark" data-index="2">
+                                <input type="color" class="palette-picker" data-type="dark" data-index="3">
+                            </div>
+                            <div class="palette-row">
+                                <span class="palette-label">Light</span>
+                                <input type="color" class="palette-picker" data-type="light" data-index="0">
+                                <input type="color" class="palette-picker" data-type="light" data-index="1">
+                                <input type="color" class="palette-picker" data-type="light" data-index="2">
+                                <input type="color" class="palette-picker" data-type="light" data-index="3">
+                            </div>
+                            <p class="control-hint">Click any color to customize</p>
+                        </div>
+
+                        <!-- Gradient Controls (shown when gradient mode) -->
+                        <div id="gradientControls" class="gradient-controls" style="display: none;">
+                            <label>Dark Max Brightness: <span id="darkLumValue">33</span>%</label>
+                            <input type="range" id="darkMaxLum" min="0" max="50" value="33">
+                            <label>Light Min Brightness: <span id="lightLumValue">66</span>%</label>
+                            <input type="range" id="lightMinLum" min="50" max="100" value="66">
+                        </div>
+                    </div>
+
+                    <!-- Background Fill (visible when logo loaded) -->
+                    <div id="backgroundFillGroup" class="control-group" style="display: none;">
+                        <h3>Background Fill</h3>
+                        <select id="backgroundFill">
+                            <option value="light">Light (from logo)</option>
+                            <option value="dark">Dark (from logo)</option>
+                        </select>
+                    </div>
+
+                </div>
+            </div>
+
+            <!-- Step 3 Actions -->
+            <div class="step-actions step-actions-split">
+                <button type="button" class="btn btn-secondary" id="backBtn3">
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
+                    Back
+                </button>
+                <button type="button" class="btn btn-primary" id="nextBtn3">
+                    Continue
+                    <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
+                </button>
+            </div>
+        </section>
+
+        <!-- Step 4: Delete & Export -->
+        <section id="step4" class="step-section">
+            <div class="delete-step-layout">
+                <!-- Left: Canvas area -->
+                <div class="delete-canvas-container">
+                    <canvas id="deleteCanvas" width="500" height="500"></canvas>
+                    <div id="deleteHoverIndicator" class="delete-hover-indicator" style="display: none;"></div>
+                    <p class="canvas-hint">Click a module to delete its codeword (8 modules)</p>
+                </div>
+
+                <!-- Right: Side panel -->
+                <div class="delete-side-panel">
+                    <!-- Summary -->
+                    <div class="delete-summary">
+                        <div class="delete-summary-row">
+                            <span>Total Codewords:</span>
+                            <strong id="deleteTotalCodewords">0</strong>
+                        </div>
+                        <div class="delete-summary-row">
+                            <span>Deleted:</span>
+                            <strong id="deleteDeletedCount">0</strong>
+                        </div>
+                    </div>
+
+                    <!-- Block Legend -->
+                    <div id="deleteBlockLegend" class="delete-block-legend"></div>
+
+                    <!-- Reset Button -->
+                    <button type="button" class="btn btn-secondary" id="resetDeletionsBtn" style="width: 100%; justify-content: center; margin-bottom: 20px;">
+                        Reset Deletions
+                    </button>
+
+                    <!-- Hide Deleted Preview -->
+                    <label class="checkbox-inline" style="display: flex; align-items: center; gap: 8px; margin-bottom: 16px; cursor: pointer;">
+                        <input type="checkbox" id="hideDeletedPreview">
+                        <span style="font-size: 13px;">Hide deleted modules</span>
+                    </label>
+
                     <!-- Quiet Zone -->
                     <div class="control-group">
-                        <h3>Quiet Zone: <span id="quietZoneValue">4</span> modules</h3>
-                        <input type="range" id="quietZone" min="0" max="8" value="4">
+                        <h3>Quiet Zone: <span id="quietZoneValue">2</span> modules</h3>
+                        <input type="range" id="quietZone" min="0" max="8" value="2">
                     </div>
 
                     <!-- Export -->
                     <div class="control-group export-group">
                         <h3>Export</h3>
                         <div class="export-buttons">
-                            <button type="button" class="btn btn-primary" data-size="512">Download 512px</button>
-                            <button type="button" class="btn btn-primary" data-size="1024">Download 1024px</button>
-                            <button type="button" class="btn btn-primary" data-size="2048">Download 2048px</button>
+                            <button type="button" class="btn btn-primary export-delete-btn" data-size="512">Download 512px</button>
+                            <button type="button" class="btn btn-primary export-delete-btn" data-size="1024">Download 1024px</button>
+                            <button type="button" class="btn btn-primary export-delete-btn" data-size="2048">Download 2048px</button>
                         </div>
                     </div>
                 </div>
@@ -294,7 +412,7 @@
 
             <!-- Back Button -->
             <div class="step-actions">
-                <button type="button" class="btn btn-secondary" id="backBtn3">
+                <button type="button" class="btn btn-secondary" id="backBtn4">
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z"/></svg>
                     Back
                 </button>

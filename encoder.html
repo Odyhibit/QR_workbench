@@ -633,17 +633,17 @@
 
                 <div class="control-group">
                     <label>Logo Scale: <span id="logoBlendScaleLabel">100</span>%</label>
-                    <input type="range" id="logoBlendScale" min="50" max="150" value="100" style="width: 100%;">
+                    <input type="range" id="logoBlendScale" min="50" max="150" value="100" step="0.1" style="width: 100%;">
                 </div>
 
                 <div class="control-group">
                     <label>Logo Position X: <span id="logoBlendXLabel">50</span>%</label>
-                    <input type="range" id="logoBlendX" min="0" max="100" value="50" style="width: 100%;">
+                    <input type="range" id="logoBlendX" min="0" max="100" value="50" step="0.1" style="width: 100%;">
                 </div>
 
                 <div class="control-group">
                     <label>Logo Position Y: <span id="logoBlendYLabel">50</span>%</label>
-                    <input type="range" id="logoBlendY" min="0" max="100" value="50" style="width: 100%;">
+                    <input type="range" id="logoBlendY" min="0" max="100" value="50" step="0.1" style="width: 100%;">
                 </div>
 
                 <button class="mark-button" id="applyLogoBlendBtn" onclick="applyLogoBlendToPadding()" disabled>Apply Logo Blend to Padding</button>
@@ -1090,7 +1090,7 @@
         });
 
         document.getElementById('logoBlendScale')?.addEventListener('input', function(e) {
-            logoBlendState.logoScale = parseInt(e.target.value);
+            logoBlendState.logoScale = parseFloat(e.target.value);
             document.getElementById('logoBlendScaleLabel').textContent = e.target.value;
             if (typeof renderPaddingGrid === 'function') {
                 renderPaddingGrid();
@@ -1099,7 +1099,7 @@
         });
 
         document.getElementById('logoBlendX')?.addEventListener('input', function(e) {
-            logoBlendState.logoX = parseInt(e.target.value);
+            logoBlendState.logoX = parseFloat(e.target.value);
             document.getElementById('logoBlendXLabel').textContent = e.target.value;
             if (typeof renderPaddingGrid === 'function') {
                 renderPaddingGrid();
@@ -1108,7 +1108,7 @@
         });
 
         document.getElementById('logoBlendY')?.addEventListener('input', function(e) {
-            logoBlendState.logoY = parseInt(e.target.value);
+            logoBlendState.logoY = parseFloat(e.target.value);
             document.getElementById('logoBlendYLabel').textContent = e.target.value;
             if (typeof renderPaddingGrid === 'function') {
                 renderPaddingGrid();

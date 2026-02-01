@@ -24,7 +24,28 @@ const App = {
         eccLevel: 'M',
         paddingModuleMap: null,
         editableCells: new Set(),
-        originalPaddingBytes: null
+        originalPaddingBytes: null,
+        // Paint mode state
+        interactionMode: 'logo',    // 'logo' or 'paint'
+        brushMode: 'black',         // 'black' or 'white'
+        paddingEdits: new Map(),     // "row,col" → boolean (true=dark)
+        isPaintingModule: false,
+        paintUpdateTimeout: null,
+        lastHighlightCell: null,
+        // Delete step state
+        deleteState: {
+            deletedCodewords: new Set(),
+            hoveredCodewordIndex: null,
+            hoveredBlockIndex: null,
+            codewordMap: null,
+            reverseMap: null,
+            blockInfo: [],
+            totalCodewords: 0,
+            blockColors: ['#FF6B6B','#4ECDC4','#45B7D1','#FFA07A','#98D8C8',
+                          '#F7DC6F','#BB8FCE','#85C1E2','#F8B88B','#ABEBC6'],
+            hideOverlays: false
+        },
+        deleteEventsInitialized: false
     },
 
     // Initialize application
@@ -33,8 +54,9 @@ const App = {
         this.setupStepNavigation();
         this.setupFormHandlers();
         this.setupLogoControls();
+        this.setupPaintMode();
         this.setupStyleControls();
-        this.setupExportButtons();
+        this.setupDeleteStep();
 
         // Render initial form
         this.renderForm('text');
@@ -92,6 +114,15 @@ const App = {
         document.getElementById('backBtn3').addEventListener('click', () => {
             this.goToStep(2);
         });
+
+        document.getElementById('nextBtn3').addEventListener('click', () => {
+            this.goToStep(4);
+        });
+
+        // Step 4 buttons
+        document.getElementById('backBtn4').addEventListener('click', () => {
+            this.goToStep(3);
+        });
     },
 
     // Go to specific step
@@ -115,10 +146,21 @@ const App = {
             if (!this.state.matrix) {
                 this.generateQR();
             }
+            this.updatePaintControlsVisibility();
             this.renderLogoCanvas();
         } else if (step === 3) {
             // Don't regenerate - use the existing (possibly optimized) matrix
+            if (QRRenderer.state.colorMode === 'palette') {
+                this.displayPalette();
+            }
             this.renderMainCanvas();
+        } else if (step === 4) {
+            // Build codeword map if needed
+            if (!this.state.deleteState.codewordMap && this.state.blocks && this.state.matrix) {
+                this.buildCodewordMap();
+            }
+            this.renderDeleteCanvas();
+            this.updateDeleteBlockLegend();
         }
     },
 
@@ -296,6 +338,18 @@ const App = {
 
             this.state.qrContent = content;
 
+            // Clear paint state on regeneration
+            this.state.paddingEdits = new Map();
+            this.resetPaintModeUI();
+
+            // Clear delete state on regeneration
+            this.state.deleteState.deletedCodewords = new Set();
+            this.state.deleteState.codewordMap = null;
+            this.state.deleteState.reverseMap = null;
+            this.state.deleteState.blockInfo = [];
+            this.state.deleteState.hoveredCodewordIndex = null;
+            this.state.deleteState.hoveredBlockIndex = null;
+
             // Determine version
             let version = this.getSelectedVersion();
             const mode = this.detectMode(content);
@@ -469,14 +523,24 @@ const App = {
                     canvasHint.style.display = 'none';
                     logoCanvas.classList.add('draggable');
 
-                    // Show module color mode control and optimize section
-                    const moduleColorMode = document.getElementById('moduleColorMode');
-                    if (moduleColorMode) moduleColorMode.style.display = 'block';
+                    // Show optimize section and flag logo loaded for style tab
                     const optimizeMaskSection = document.getElementById('optimizeMaskSection');
                     if (optimizeMaskSection) optimizeMaskSection.style.display = 'block';
+                    const moduleColorMode = document.getElementById('moduleColorMode');
+                    if (moduleColorMode) moduleColorMode.style.display = 'block';
+                    const backgroundFillGroup = document.getElementById('backgroundFillGroup');
+                    if (backgroundFillGroup) backgroundFillGroup.style.display = 'block';
 
                     // Auto-detect background fill
                     this.autoDetectBackgroundFill();
+
+                    // Refresh palette pickers with newly extracted colors
+                    this.displayPalette();
+                    // Show palette sub-controls if palette mode is active
+                    const colorMode = document.getElementById('colorMode').value;
+                    if (colorMode === 'palette') {
+                        document.getElementById('paletteDisplay').style.display = 'block';
+                    }
 
                     this.renderLogoCanvas();
                 });
@@ -490,16 +554,25 @@ const App = {
             logoAdjustments.style.display = 'none';
             canvasHint.style.display = 'block';
             logoCanvas.classList.remove('draggable');
+            this.resetPaintModeUI();
 
-            // Hide module color mode control and optimize section, reset to default
-            const moduleColorMode = document.getElementById('moduleColorMode');
-            if (moduleColorMode) moduleColorMode.style.display = 'none';
+            // Hide optimize section and color mode, reset to default
             const optimizeMaskSection = document.getElementById('optimizeMaskSection');
             if (optimizeMaskSection) optimizeMaskSection.style.display = 'none';
             const optimizeResult = document.getElementById('optimizeResult');
             if (optimizeResult) optimizeResult.style.display = 'none';
-            document.getElementById('colorMode').value = 'default';
-            QRRenderer.state.colorMode = 'default';
+            const moduleColorMode = document.getElementById('moduleColorMode');
+            if (moduleColorMode) moduleColorMode.style.display = 'none';
+            document.getElementById('colorMode').value = 'palette';
+            QRRenderer.state.colorMode = 'palette';
+            const paletteDisplay = document.getElementById('paletteDisplay');
+            if (paletteDisplay) paletteDisplay.style.display = 'none';
+            const gradientControls = document.getElementById('gradientControls');
+            if (gradientControls) gradientControls.style.display = 'none';
+            const backgroundFillGroup = document.getElementById('backgroundFillGroup');
+            if (backgroundFillGroup) backgroundFillGroup.style.display = 'none';
+            document.getElementById('backgroundFill').value = 'light';
+            QRRenderer.state.backgroundFill = 'light';
 
             this.renderLogoCanvas();
         });
@@ -515,13 +588,6 @@ const App = {
         logoScale.addEventListener('input', (e) => {
             QRRenderer.state.logoScale = parseInt(e.target.value);
             logoScaleValue.textContent = e.target.value;
-            this.renderLogoCanvas();
-        });
-
-        // Background fill
-        const backgroundFill = document.getElementById('backgroundFill');
-        backgroundFill.addEventListener('change', (e) => {
-            QRRenderer.state.backgroundFill = e.target.value;
             this.renderLogoCanvas();
         });
 
@@ -543,12 +609,6 @@ const App = {
             } else if (this.state.currentStep === 3) {
                 this.renderMainCanvas();
             }
-        });
-
-        // Color mode (in logo step)
-        document.getElementById('colorMode').addEventListener('change', (e) => {
-            QRRenderer.state.colorMode = e.target.value;
-            this.renderLogoCanvas();
         });
 
         // Logo dragging
@@ -581,10 +641,8 @@ const App = {
 
         const avgLuminance = opaquePixels > 0 ? totalLuminance / opaquePixels : 128;
 
-        let fill = 'transparent';
-        if (hasTransparency) {
-            fill = 'transparent';
-        } else if (avgLuminance < 85) {
+        let fill = 'light';
+        if (avgLuminance < 85) {
             fill = 'dark';
         } else {
             fill = 'light';
@@ -607,6 +665,10 @@ const App = {
         };
 
         canvas.addEventListener('mousedown', (e) => {
+            if (this.state.interactionMode === 'paint') {
+                this.handlePaintStart(e);
+                return;
+            }
             if (!QRRenderer.state.logoImg) return;
 
             this.state.isDragging = true;
@@ -645,6 +707,11 @@ const App = {
 
         // Touch support
         canvas.addEventListener('touchstart', (e) => {
+            if (this.state.interactionMode === 'paint') {
+                this.handlePaintStart(e.touches[0]);
+                e.preventDefault();
+                return;
+            }
             if (!QRRenderer.state.logoImg) return;
 
             const touch = e.touches[0];
@@ -682,12 +749,19 @@ const App = {
         });
     },
 
-    // Render logo canvas (step 2) - transparent modules
+    // Render logo canvas (step 2) - transparent modules or paint mode
     renderLogoCanvas() {
         const canvas = document.getElementById('logoCanvas');
         if (!canvas || !this.state.matrix) return;
 
-        QRRenderer.renderWithTransparency(canvas, this.state.matrix, this.state.version, 0.4);
+        if (this.state.interactionMode === 'paint') {
+            QRRenderer.renderForPainting(
+                canvas, this.state.matrix, this.state.version,
+                this.state.editableCells, this.state.paddingEdits, 0.4
+            );
+        } else {
+            QRRenderer.renderWithTransparency(canvas, this.state.matrix, this.state.version, 0.4);
+        }
     },
 
     // Render main canvas with full styling (step 3)
@@ -700,19 +774,96 @@ const App = {
 
     // Setup style controls (step 3)
     setupStyleControls() {
-        // Module shape
-        document.querySelectorAll('.shape-btn').forEach(btn => {
+        // Module shape (exclude finder shape buttons)
+        document.querySelectorAll('.shape-btn:not(.finder-shape-btn)').forEach(btn => {
             btn.addEventListener('click', () => {
-                document.querySelectorAll('.shape-btn').forEach(b => b.classList.remove('active'));
+                document.querySelectorAll('.shape-btn:not(.finder-shape-btn)').forEach(b => b.classList.remove('active'));
                 btn.classList.add('active');
                 QRRenderer.state.moduleShape = btn.dataset.shape;
                 this.renderMainCanvas();
             });
         });
 
-        // Finder shape
-        document.getElementById('finderShape').addEventListener('change', (e) => {
-            QRRenderer.state.finderShape = e.target.value;
+        // Finder shape buttons
+        document.querySelectorAll('.finder-shape-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                document.querySelectorAll('.finder-shape-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+                QRRenderer.state.finderShape = btn.dataset.finder;
+                this.renderMainCanvas();
+            });
+        });
+
+        // Finder color pickers
+        document.getElementById('finderOuterColor').addEventListener('input', (e) => {
+            QRRenderer.state.finderOuterColor = e.target.value;
+            this.renderMainCanvas();
+        });
+        document.getElementById('finderMiddleColor').addEventListener('input', (e) => {
+            QRRenderer.state.finderMiddleColor = e.target.value;
+            this.renderMainCanvas();
+        });
+        document.getElementById('finderCenterColor').addEventListener('input', (e) => {
+            QRRenderer.state.finderCenterColor = e.target.value;
+            this.renderMainCanvas();
+        });
+
+        // Module color mode (shown when logo is loaded)
+        document.getElementById('colorMode').addEventListener('change', (e) => {
+            QRRenderer.state.colorMode = e.target.value;
+
+            const paletteDisplay = document.getElementById('paletteDisplay');
+            const gradientControls = document.getElementById('gradientControls');
+
+            if (e.target.value === 'palette') {
+                this.displayPalette();
+                paletteDisplay.style.display = 'block';
+                gradientControls.style.display = 'none';
+            } else if (e.target.value === 'gradient') {
+                paletteDisplay.style.display = 'none';
+                gradientControls.style.display = 'block';
+            } else {
+                paletteDisplay.style.display = 'none';
+                gradientControls.style.display = 'none';
+            }
+
+            this.renderMainCanvas();
+        });
+
+        // Palette color pickers
+        document.querySelectorAll('.palette-picker').forEach(input => {
+            input.addEventListener('input', (e) => {
+                const type = e.target.dataset.type;
+                const index = parseInt(e.target.dataset.index);
+                if (type === 'dark') {
+                    QRRenderer.state.darkPalette[index] = e.target.value;
+                } else {
+                    QRRenderer.state.lightPalette[index] = e.target.value;
+                }
+                this.renderMainCanvas();
+            });
+        });
+
+        // Gradient luminosity sliders
+        const darkMaxLum = document.getElementById('darkMaxLum');
+        const darkLumValue = document.getElementById('darkLumValue');
+        darkMaxLum.addEventListener('input', (e) => {
+            QRRenderer.state.darkMaxLuminosity = parseInt(e.target.value);
+            darkLumValue.textContent = e.target.value;
+            this.renderMainCanvas();
+        });
+
+        const lightMinLum = document.getElementById('lightMinLum');
+        const lightLumValue = document.getElementById('lightLumValue');
+        lightMinLum.addEventListener('input', (e) => {
+            QRRenderer.state.lightMinLuminosity = parseInt(e.target.value);
+            lightLumValue.textContent = e.target.value;
+            this.renderMainCanvas();
+        });
+
+        // Background fill (shown when logo is loaded)
+        document.getElementById('backgroundFill').addEventListener('change', (e) => {
+            QRRenderer.state.backgroundFill = e.target.value;
             this.renderMainCanvas();
         });
 
@@ -725,26 +876,19 @@ const App = {
             this.renderMainCanvas();
         });
 
-        // Quiet zone
-        const quietZone = document.getElementById('quietZone');
-        const quietZoneValue = document.getElementById('quietZoneValue');
-        quietZone.addEventListener('input', (e) => {
-            QRRenderer.state.quietZone = parseInt(e.target.value);
-            quietZoneValue.textContent = e.target.value;
-            this.renderMainCanvas();
-        });
     },
 
-    // Setup export buttons
-    setupExportButtons() {
-        document.querySelectorAll('.export-buttons .btn').forEach(btn => {
-            btn.addEventListener('click', () => {
-                const size = parseInt(btn.dataset.size);
-                const canvas = document.getElementById('mainCanvas');
-                if (this.state.matrix) {
-                    QRRenderer.exportPNG(canvas, this.state.matrix, this.state.version, size);
-                }
-            });
+    // Sync palette color picker UI with current QRRenderer palette values
+    displayPalette() {
+        const pickers = document.querySelectorAll('.palette-picker');
+        pickers.forEach(picker => {
+            const type = picker.dataset.type;
+            const index = parseInt(picker.dataset.index);
+            if (type === 'dark') {
+                picker.value = QRRenderer.state.darkPalette[index] || '#000000';
+            } else {
+                picker.value = QRRenderer.state.lightPalette[index] || '#ffffff';
+            }
         });
     },
 
@@ -1264,6 +1408,670 @@ const App = {
         };
     },
 
+    // ========== PAINT MODE ==========
+
+    // Setup paint mode controls and event handlers
+    setupPaintMode() {
+        const canvas = document.getElementById('logoCanvas');
+
+        // Mode toggle buttons
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mode = btn.dataset.mode;
+                this.state.interactionMode = mode;
+
+                // Update toggle active state
+                document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                // Show/hide brush controls
+                const brushControls = document.getElementById('brushControls');
+                brushControls.style.display = mode === 'paint' ? 'flex' : 'none';
+
+                // Update mode hint
+                const modeHint = document.getElementById('modeHint');
+                if (modeHint) {
+                    modeHint.textContent = mode === 'paint' ? 'Click modules to paint' : 'Drag to move logo';
+                }
+
+                // Toggle canvas CSS class
+                canvas.classList.toggle('paint-mode', mode === 'paint');
+                canvas.classList.toggle('draggable', mode === 'logo' && !!QRRenderer.state.logoImg);
+
+                this.renderLogoCanvas();
+            });
+        });
+
+        // Brush buttons
+        document.querySelectorAll('.brush-btn[data-brush]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                this.state.brushMode = btn.dataset.brush;
+                document.querySelectorAll('.brush-btn[data-brush]').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        // Reset button
+        document.getElementById('resetPaintBtn').addEventListener('click', () => {
+            this.state.paddingEdits = new Map();
+            this.updateQRFromPaddingEdits();
+            this.renderLogoCanvas();
+        });
+
+        // Canvas paint event handlers
+        canvas.addEventListener('mousemove', (e) => {
+            if (this.state.interactionMode !== 'paint') return;
+            if (this.state.isPaintingModule) {
+                this.paintModuleAt(e);
+            } else {
+                this.highlightModuleAt(e);
+            }
+        });
+
+        canvas.addEventListener('mouseup', () => {
+            if (this.state.isPaintingModule) {
+                this.state.isPaintingModule = false;
+                this.schedulePaintUpdate();
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            if (this.state.isPaintingModule) {
+                this.state.isPaintingModule = false;
+                this.schedulePaintUpdate();
+            }
+            if (this.state.lastHighlightCell !== null) {
+                this.state.lastHighlightCell = null;
+                this.renderLogoCanvas();
+            }
+        });
+
+        // Touch equivalents on canvas
+        canvas.addEventListener('touchmove', (e) => {
+            if (this.state.interactionMode !== 'paint') return;
+            if (this.state.isPaintingModule) {
+                this.paintModuleAt(e.touches[0]);
+                e.preventDefault();
+            }
+        }, { passive: false });
+
+        canvas.addEventListener('touchend', () => {
+            if (this.state.isPaintingModule) {
+                this.state.isPaintingModule = false;
+                this.schedulePaintUpdate();
+            }
+        });
+    },
+
+    // Convert mouse/touch event to grid (row, col)
+    canvasEventToCell(e) {
+        const canvas = document.getElementById('logoCanvas');
+        const rect = canvas.getBoundingClientRect();
+        const scaleX = canvas.width / rect.width;
+        const scaleY = canvas.height / rect.height;
+        const px = (e.clientX - rect.left) * scaleX;
+        const py = (e.clientY - rect.top) * scaleY;
+
+        const size = this.state.matrix.length;
+        const quietZone = QRRenderer.state.quietZone;
+        const totalSize = size + (quietZone * 2);
+        const moduleSize = canvas.width / totalSize;
+        const offset = quietZone * moduleSize;
+
+        const col = Math.floor((px - offset) / moduleSize);
+        const row = Math.floor((py - offset) / moduleSize);
+
+        if (row < 0 || row >= size || col < 0 || col >= size) return null;
+        return { row, col };
+    },
+
+    // Handle paint start (mousedown/touchstart in paint mode)
+    handlePaintStart(e) {
+        if (!this.state.matrix) return;
+        this.state.isPaintingModule = true;
+        this.paintModuleAt(e);
+        if (e.preventDefault) e.preventDefault();
+    },
+
+    // Paint a module at the event position
+    paintModuleAt(e) {
+        const cell = this.canvasEventToCell(e);
+        if (!cell) return;
+
+        const cellKey = `${cell.row},${cell.col}`;
+        if (!this.state.editableCells.has(cellKey)) return;
+
+        const wantDark = this.state.brushMode === 'black';
+        this.state.paddingEdits.set(cellKey, wantDark);
+
+        // Immediate visual feedback: re-render
+        this.renderLogoCanvas();
+    },
+
+    // Highlight an editable cell on hover
+    highlightModuleAt(e) {
+        const cell = this.canvasEventToCell(e);
+        const cellKey = cell ? `${cell.row},${cell.col}` : null;
+
+        if (cellKey === this.state.lastHighlightCell) return;
+        this.state.lastHighlightCell = cellKey;
+
+        this.renderLogoCanvas();
+
+        if (cell && this.state.editableCells.has(cellKey)) {
+            const canvas = document.getElementById('logoCanvas');
+            const size = this.state.matrix.length;
+            QRRenderer.drawCellHighlight(canvas, cell.row, cell.col, size, QRRenderer.state.quietZone);
+        }
+    },
+
+    // Schedule debounced ECC recalculation after painting
+    schedulePaintUpdate() {
+        clearTimeout(this.state.paintUpdateTimeout);
+        this.state.paintUpdateTimeout = setTimeout(() => {
+            this.updateQRFromPaddingEdits();
+        }, 100);
+    },
+
+    // Apply padding edits to the QR matrix (full pipeline)
+    updateQRFromPaddingEdits() {
+        if (this.state.paddingEdits.size === 0) return;
+        if (!this.state.paddingModuleMap || !this.state.bitstreamData) return;
+
+        const version = this.state.version;
+        const eccLevel = this.state.eccLevel;
+        const maskPattern = this.state.maskPattern;
+        const size = this.state.matrix.length;
+
+        // 1. Convert painted edits to unmasked bytes
+        const newPaddingBytes = this.convertPaddingEditsToBytes(this.state.paddingEdits, maskPattern);
+
+        // 2. Update bitstreamData.dataBytes with new padding bytes
+        const paddingInfo = this.identifyPaddingBytes();
+        const messageBytes = paddingInfo.startByteIndex;
+
+        newPaddingBytes.forEach((byte, idx) => {
+            this.state.bitstreamData.dataBytes[messageBytes + idx] = byte;
+        });
+        this.state.bitstreamData.padBytes = [...newPaddingBytes];
+
+        // 3. Recalculate ECC
+        let blocks = splitIntoBlocks(this.state.bitstreamData.dataBytes, version, eccLevel, blockSizeTable);
+        blocks = calculateEccForBlocks(blocks);
+        this.state.blocks = blocks;
+
+        // 4. Regenerate matrix
+        const interleaved = interleaveBlocks(blocks);
+        const matrix = createMatrix(size);
+        placeFunctionPatterns(matrix, version);
+        placeDataBits(matrix, interleaved);
+        applyMask(matrix, maskPattern, version);
+        placeFormatInfo(matrix, eccLevel, maskPattern, version);
+        placeVersionInfo(matrix, version);
+
+        // 5. Update state
+        this.state.matrix = matrix;
+        this.state.originalPaddingBytes = [...newPaddingBytes];
+
+        // 6. Clear paddingEdits (now baked in)
+        this.state.paddingEdits = new Map();
+
+        // 7. Re-render
+        this.renderLogoCanvas();
+    },
+
+    // Show/hide paint mode controls based on editable cells
+    updatePaintControlsVisibility() {
+        const controls = document.getElementById('paintModeControls');
+        if (!controls) return;
+        controls.style.display = this.state.editableCells.size > 0 ? 'flex' : 'none';
+    },
+
+    // Reset paint mode UI to logo mode
+    resetPaintModeUI() {
+        this.state.interactionMode = 'logo';
+        this.state.paddingEdits = new Map();
+        this.state.isPaintingModule = false;
+        this.state.lastHighlightCell = null;
+        clearTimeout(this.state.paintUpdateTimeout);
+
+        // Reset toggle buttons
+        document.querySelectorAll('.mode-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.mode === 'logo');
+        });
+
+        // Hide brush controls
+        const brushControls = document.getElementById('brushControls');
+        if (brushControls) brushControls.style.display = 'none';
+
+        // Reset canvas class
+        const canvas = document.getElementById('logoCanvas');
+        if (canvas) {
+            canvas.classList.remove('paint-mode');
+        }
+
+        this.updatePaintControlsVisibility();
+    },
+
+    // ========== DELETE STEP (Step 4) ==========
+
+    // Interleave blocks with tracking info for codeword mapping
+    interleaveBlocksWithTracking(blocks) {
+        const result = [];
+        const maxDataLen = Math.max(...blocks.map(b => b.data.length));
+        const maxEccLen = Math.max(...blocks.map(b => b.ecc.length));
+
+        // Interleave data bytes
+        for (let i = 0; i < maxDataLen; i++) {
+            blocks.forEach((block, blockIndex) => {
+                if (i < block.data.length) {
+                    result.push({ value: block.data[i], blockIndex, isEcc: false });
+                }
+            });
+        }
+
+        // Interleave ECC bytes
+        for (let i = 0; i < maxEccLen; i++) {
+            blocks.forEach((block, blockIndex) => {
+                if (i < block.ecc.length) {
+                    result.push({ value: block.ecc[i], blockIndex, isEcc: true });
+                }
+            });
+        }
+
+        return result;
+    },
+
+    // Get the module position for a given bit index in the interleaved bitstream
+    getModulePositionForBit(bitIndex, size, version) {
+        let bitCounter = 0;
+        let col = size - 1;
+        let direction = -1;
+
+        while (col >= 0) {
+            if (col === 6) { col--; continue; }
+
+            for (let row = (direction === -1 ? size - 1 : 0);
+                 direction === -1 ? row >= 0 : row < size;
+                 row += direction) {
+
+                // Right column
+                if (!isFunctionModule(row, col, size, version)) {
+                    if (bitCounter === bitIndex) return { row, col };
+                    bitCounter++;
+                }
+
+                // Left column
+                if (!isFunctionModule(row, col - 1, size, version)) {
+                    if (bitCounter === bitIndex) return { row, col: col - 1 };
+                    bitCounter++;
+                }
+            }
+
+            col -= 2;
+            direction *= -1;
+        }
+
+        return null;
+    },
+
+    // Build codeword map from blocks
+    buildCodewordMap() {
+        const blocks = this.state.blocks;
+        const version = this.state.version;
+        if (!blocks || !version || !this.state.matrix) return;
+
+        const size = this.state.matrix.length;
+        const ds = this.state.deleteState;
+
+        // Build block info
+        ds.blockInfo = blocks.map((block, index) => ({
+            dataCount: block.data.length,
+            eccCount: block.eccCount,
+            deletedCount: 0,
+            color: ds.blockColors[index % ds.blockColors.length]
+        }));
+
+        // Interleave all bytes with tracking
+        const interleaved = this.interleaveBlocksWithTracking(blocks);
+        ds.totalCodewords = interleaved.length;
+
+        // Build codeword map: index → {positions, blockIndex, isEcc, byteValue}
+        const codewordMap = new Map();
+        const reverseMap = new Map();
+
+        for (let cwIdx = 0; cwIdx < interleaved.length; cwIdx++) {
+            const item = interleaved[cwIdx];
+            const positions = [];
+            const bitOffset = cwIdx * 8;
+
+            for (let bit = 0; bit < 8; bit++) {
+                const pos = this.getModulePositionForBit(bitOffset + bit, size, version);
+                if (pos) positions.push(pos);
+            }
+
+            codewordMap.set(cwIdx, {
+                positions,
+                blockIndex: item.blockIndex,
+                isEcc: item.isEcc,
+                byteValue: item.value
+            });
+
+            // Build reverse map for fast lookup
+            positions.forEach(pos => {
+                reverseMap.set(`${pos.row},${pos.col}`, cwIdx);
+            });
+        }
+
+        ds.codewordMap = codewordMap;
+        ds.reverseMap = reverseMap;
+
+        // Recount deletions per block
+        this.refreshDeleteBlockCounts();
+    },
+
+    // Get codeword index for a module position via reverse map
+    getCodewordIndexForModule(row, col) {
+        const ds = this.state.deleteState;
+        if (!ds.reverseMap) return null;
+        const cwIdx = ds.reverseMap.get(`${row},${col}`);
+        return cwIdx !== undefined ? cwIdx : null;
+    },
+
+    // Get block index for a codeword
+    getBlockIndexForCodeword(cwIdx) {
+        const ds = this.state.deleteState;
+        if (!ds.codewordMap) return null;
+        const data = ds.codewordMap.get(cwIdx);
+        return data ? data.blockIndex : null;
+    },
+
+    // Check if a codeword is ECC
+    isEccCodeword(cwIdx) {
+        const ds = this.state.deleteState;
+        if (!ds.codewordMap) return false;
+        const data = ds.codewordMap.get(cwIdx);
+        return data ? data.isEcc : false;
+    },
+
+    // Refresh block deleted counts from the set
+    refreshDeleteBlockCounts() {
+        const ds = this.state.deleteState;
+        if (!ds.blockInfo) return;
+        ds.blockInfo.forEach(block => { block.deletedCount = 0; });
+
+        ds.deletedCodewords.forEach(cwIdx => {
+            const blockIndex = this.getBlockIndexForCodeword(cwIdx);
+            if (blockIndex !== null && ds.blockInfo[blockIndex]) {
+                ds.blockInfo[blockIndex].deletedCount++;
+            }
+        });
+    },
+
+    // Render the delete canvas (Step 4)
+    renderDeleteCanvas() {
+        const canvas = document.getElementById('deleteCanvas');
+        if (!canvas || !this.state.matrix) return;
+
+        QRRenderer.renderWithDeletion(
+            canvas,
+            this.state.matrix,
+            this.state.version,
+            this.state.deleteState,
+            { showOverlays: !this.state.deleteState.hideOverlays }
+        );
+    },
+
+    // Setup delete step: event handlers, reset, export
+    setupDeleteStep() {
+        const canvas = document.getElementById('deleteCanvas');
+        if (!canvas) return;
+
+        // Delete canvas mouse events
+        canvas.addEventListener('mousemove', (e) => {
+            if (!this.state.matrix || !this.state.deleteState.reverseMap) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const px = (e.clientX - rect.left) * scaleX;
+            const py = (e.clientY - rect.top) * scaleY;
+
+            const size = this.state.matrix.length;
+            const quietZone = QRRenderer.state.quietZone;
+            const totalSize = size + (quietZone * 2);
+            const moduleSize = canvas.width / totalSize;
+            const offset = quietZone * moduleSize;
+
+            const col = Math.floor((px - offset) / moduleSize);
+            const row = Math.floor((py - offset) / moduleSize);
+
+            if (row >= 0 && row < size && col >= 0 && col < size) {
+                const cwIdx = this.getCodewordIndexForModule(row, col);
+                const blockIdx = cwIdx !== null ? this.getBlockIndexForCodeword(cwIdx) : null;
+
+                if (cwIdx !== this.state.deleteState.hoveredCodewordIndex ||
+                    blockIdx !== this.state.deleteState.hoveredBlockIndex) {
+                    this.state.deleteState.hoveredCodewordIndex = cwIdx;
+                    this.state.deleteState.hoveredBlockIndex = blockIdx;
+                    this.updateDeleteHoverIndicator();
+                    this.renderDeleteCanvas();
+                }
+            }
+        });
+
+        canvas.addEventListener('mouseleave', () => {
+            this.state.deleteState.hoveredCodewordIndex = null;
+            this.state.deleteState.hoveredBlockIndex = null;
+            this.updateDeleteHoverIndicator();
+            this.renderDeleteCanvas();
+        });
+
+        canvas.addEventListener('click', (e) => {
+            if (!this.state.matrix || !this.state.deleteState.reverseMap) return;
+
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const px = (e.clientX - rect.left) * scaleX;
+            const py = (e.clientY - rect.top) * scaleY;
+
+            const size = this.state.matrix.length;
+            const quietZone = QRRenderer.state.quietZone;
+            const totalSize = size + (quietZone * 2);
+            const moduleSize = canvas.width / totalSize;
+            const offset = quietZone * moduleSize;
+
+            const col = Math.floor((px - offset) / moduleSize);
+            const row = Math.floor((py - offset) / moduleSize);
+
+            if (row < 0 || row >= size || col < 0 || col >= size) return;
+
+            const cwIdx = this.getCodewordIndexForModule(row, col);
+            if (cwIdx === null) return; // Function module, ignore
+
+            const ds = this.state.deleteState;
+            const blockIndex = this.getBlockIndexForCodeword(cwIdx);
+
+            if (ds.deletedCodewords.has(cwIdx)) {
+                // Restore
+                ds.deletedCodewords.delete(cwIdx);
+                if (blockIndex !== null && ds.blockInfo[blockIndex]) {
+                    ds.blockInfo[blockIndex].deletedCount--;
+                }
+            } else {
+                // Check ECC capacity
+                if (blockIndex !== null && ds.blockInfo[blockIndex]) {
+                    const block = ds.blockInfo[blockIndex];
+                    const maxErrors = Math.floor(block.eccCount / 2);
+
+                    if (block.deletedCount >= maxErrors) {
+                        const msg = `Warning: Block ${blockIndex + 1} is at or beyond error correction capacity!\n\n` +
+                            `Max correctable errors: ${maxErrors}\n` +
+                            `Currently deleted: ${block.deletedCount}\n\n` +
+                            `Deleting more codewords will likely make the QR code unscannable.\n\n` +
+                            `Continue anyway?`;
+                        if (!confirm(msg)) return;
+                    }
+                    ds.deletedCodewords.add(cwIdx);
+                    block.deletedCount++;
+                } else {
+                    ds.deletedCodewords.add(cwIdx);
+                }
+            }
+
+            this.renderDeleteCanvas();
+            this.updateDeleteBlockLegend();
+        });
+
+        // Reset deletions button
+        document.getElementById('resetDeletionsBtn').addEventListener('click', () => {
+            const ds = this.state.deleteState;
+            if (ds.deletedCodewords.size === 0) return;
+
+            ds.deletedCodewords.clear();
+            if (ds.blockInfo) {
+                ds.blockInfo.forEach(block => { block.deletedCount = 0; });
+            }
+
+            this.renderDeleteCanvas();
+            this.updateDeleteBlockLegend();
+        });
+
+        // Export buttons (Step 4)
+        document.querySelectorAll('.export-delete-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const size = parseInt(btn.dataset.size);
+                this.exportCleanPNG(size);
+            });
+        });
+
+        // Hide deleted preview checkbox
+        document.getElementById('hideDeletedPreview').addEventListener('change', (e) => {
+            this.state.deleteState.hideOverlays = e.target.checked;
+            this.renderDeleteCanvas();
+        });
+
+        // Quiet zone (Step 4)
+        const quietZone = document.getElementById('quietZone');
+        const quietZoneValue = document.getElementById('quietZoneValue');
+        quietZone.addEventListener('input', (e) => {
+            QRRenderer.state.quietZone = parseInt(e.target.value);
+            quietZoneValue.textContent = e.target.value;
+            this.renderDeleteCanvas();
+        });
+    },
+
+    // Update the block legend in Step 4 side panel
+    updateDeleteBlockLegend() {
+        const ds = this.state.deleteState;
+
+        // Update summary counts
+        const totalEl = document.getElementById('deleteTotalCodewords');
+        const deletedEl = document.getElementById('deleteDeletedCount');
+        if (totalEl) totalEl.textContent = ds.totalCodewords;
+        if (deletedEl) deletedEl.textContent = ds.deletedCodewords.size;
+
+        // Build block legend HTML
+        const legend = document.getElementById('deleteBlockLegend');
+        if (!legend || !ds.blockInfo.length) {
+            if (legend) legend.innerHTML = '';
+            return;
+        }
+
+        let html = '';
+        ds.blockInfo.forEach((block, index) => {
+            const maxErrors = Math.floor(block.eccCount / 2);
+            const pct = maxErrors > 0 ? Math.min(100, (block.deletedCount / maxErrors) * 100).toFixed(0) : 0;
+            const status = this.getBlockDeletionStatus(block.deletedCount, block.eccCount);
+
+            html += `<div class="block-legend-item" style="border-left-color: ${block.color}; background: ${status.bgColor};">
+                <div class="block-header">
+                    <div>
+                        <div class="block-name">Block ${index + 1}</div>
+                        <div class="block-counts">${block.dataCount} data + ${block.eccCount} ECC</div>
+                    </div>
+                    <div class="block-status">
+                        <div class="block-status-count" style="color: ${status.color};">${block.deletedCount} / ${maxErrors}</div>
+                        <div class="block-status-label" style="color: ${status.color};">${status.label}</div>
+                    </div>
+                </div>
+                <div class="block-progress">
+                    <div class="block-progress-bar" style="background: ${status.barColor}; width: ${pct}%;"></div>
+                </div>
+                <div class="block-max">max correctable: ${maxErrors}</div>
+            </div>`;
+        });
+
+        legend.innerHTML = html;
+    },
+
+    // Update the hover indicator overlay
+    updateDeleteHoverIndicator() {
+        const indicator = document.getElementById('deleteHoverIndicator');
+        if (!indicator) return;
+
+        const ds = this.state.deleteState;
+
+        if (ds.hoveredBlockIndex !== null && ds.blockInfo[ds.hoveredBlockIndex]) {
+            const block = ds.blockInfo[ds.hoveredBlockIndex];
+            const isEcc = ds.hoveredCodewordIndex !== null && this.isEccCodeword(ds.hoveredCodewordIndex);
+            const codewordType = isEcc ? 'ECC' : 'Data';
+            const maxErrors = Math.floor(block.eccCount / 2);
+            const status = this.getBlockDeletionStatus(block.deletedCount, block.eccCount);
+
+            indicator.style.display = 'block';
+            indicator.style.background = status.bgColor;
+            indicator.style.borderLeftColor = block.color;
+            indicator.innerHTML = `
+                <div style="font-weight: bold; color: ${block.color};">Block ${ds.hoveredBlockIndex + 1}</div>
+                <div style="font-size: 11px;">${codewordType} Codeword</div>
+                <div style="font-size: 11px; color: ${status.color}; font-weight: bold;">${block.deletedCount}/${maxErrors} deleted</div>
+                <div style="font-size: 10px; color: ${status.color};">${status.label}</div>
+            `;
+        } else {
+            indicator.style.display = 'none';
+        }
+    },
+
+    // Get block deletion status (color/label based on ECC capacity)
+    getBlockDeletionStatus(deletedCount, eccCount) {
+        const maxErrors = Math.floor(eccCount / 2);
+
+        if (deletedCount > maxErrors) {
+            return { color: '#d32f2f', bgColor: '#ffcdd2', barColor: '#d32f2f', label: 'OVER LIMIT' };
+        } else if (deletedCount === maxErrors) {
+            return { color: '#d32f2f', bgColor: '#ffcdd2', barColor: '#d32f2f', label: 'AT LIMIT' };
+        } else if (deletedCount >= maxErrors - 2 && maxErrors > 2) {
+            return { color: '#f57c00', bgColor: '#fff3e0', barColor: '#ff9800', label: 'WARNING' };
+        } else {
+            return { color: '#388e3c', bgColor: '#e8f5e9', barColor: '#4caf50', label: 'OK' };
+        }
+    },
+
+    // Export clean PNG without overlays
+    exportCleanPNG(exportSize) {
+        if (!this.state.matrix) return;
+
+        const exportCanvas = document.createElement('canvas');
+        exportCanvas.width = exportSize;
+        exportCanvas.height = exportSize;
+
+        QRRenderer.renderWithDeletion(
+            exportCanvas,
+            this.state.matrix,
+            this.state.version,
+            this.state.deleteState,
+            { showOverlays: false }
+        );
+
+        const dataURL = exportCanvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `qrcode-${exportSize}px.png`;
+        link.href = dataURL;
+        link.click();
+    },
+
     // Optimize mask pattern for best logo match (including padding modification)
     optimizeMaskForLogo() {
         if (!QRRenderer.state.logoImg) {
@@ -1287,6 +2095,16 @@ const App = {
             // Show result
             resultEl.innerHTML = `<strong>Optimized!</strong> Using mask ${result.bestMask} - ${result.matches}/${result.total} modules match logo (${result.percentage}%)`;
             resultEl.style.color = '#10b981';
+
+            // Clear manual edits (optimization replaces them) and rebuild map
+            this.state.paddingEdits = new Map();
+            this.buildPaddingModuleMap();
+
+            // Clear delete state since matrix changed
+            this.state.deleteState.deletedCodewords = new Set();
+            this.state.deleteState.codewordMap = null;
+            this.state.deleteState.reverseMap = null;
+            this.updatePaintControlsVisibility();
 
             // Re-render
             this.renderLogoCanvas();
