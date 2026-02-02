@@ -809,6 +809,12 @@ const App = {
             this.renderMainCanvas();
         });
 
+        // Full-sized separator checkbox
+        document.getElementById('finderFullSeparator').addEventListener('change', (e) => {
+            QRRenderer.state.finderFullSeparator = e.target.checked;
+            this.renderMainCanvas();
+        });
+
         // Module color mode (shown when logo is loaded)
         document.getElementById('colorMode').addEventListener('change', (e) => {
             QRRenderer.state.colorMode = e.target.value;
@@ -2156,7 +2162,8 @@ const App = {
                 finderMiddleColor: rs.finderMiddleColor,
                 finderCenterColor: rs.finderCenterColor,
                 backgroundFill: rs.backgroundFill,
-                quietZone: rs.quietZone
+                quietZone: rs.quietZone,
+                finderFullSeparator: rs.finderFullSeparator
             },
             deletedCodewords: Array.from(this.state.deleteState.deletedCodewords),
             maskPattern: this.state.maskPattern,
@@ -2241,6 +2248,7 @@ const App = {
         rs.finderCenterColor = style.finderCenterColor || '#000000';
         rs.backgroundFill = style.backgroundFill || 'light';
         rs.quietZone = style.quietZone ?? 2;
+        rs.finderFullSeparator = !!style.finderFullSeparator;
 
         // Update module shape buttons
         document.querySelectorAll('.shape-btn:not(.finder-shape-btn)').forEach(btn => {
@@ -2278,6 +2286,7 @@ const App = {
         document.getElementById('finderOuterColor').value = rs.finderOuterColor;
         document.getElementById('finderMiddleColor').value = rs.finderMiddleColor;
         document.getElementById('finderCenterColor').value = rs.finderCenterColor;
+        document.getElementById('finderFullSeparator').checked = rs.finderFullSeparator;
 
         // Background fill
         document.getElementById('backgroundFill').value = rs.backgroundFill;

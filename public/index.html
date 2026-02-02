@@ -106,7 +106,7 @@
             </div>
 
             <!-- Actions -->
-            <div class="step-actions step-actions-split">
+            <div class="step-actions step-actions-split" style="max-width: 480px; margin-left: auto; margin-right: auto;">
                 <div>
                     <input type="file" id="projectFileInput" accept=".json" hidden>
                     <button type="button" class="btn btn-secondary" id="loadProjectBtn">Load Project</button>
@@ -288,6 +288,10 @@
                                 <span>Center</span>
                             </div>
                         </div>
+                        <label class="checkbox-inline" style="display: flex; align-items: center; gap: 8px; margin-top: 8px; cursor: pointer;">
+                            <input type="checkbox" id="finderFullSeparator">
+                            <span style="font-size: 13px;">Full-sized separators</span>
+                        </label>
                     </div>
 
                     <!-- Module Size -->
@@ -399,7 +403,7 @@
                     <!-- Quiet Zone -->
                     <div class="control-group">
                         <h3>Quiet Zone: <span id="quietZoneValue">2</span> modules</h3>
-                        <input type="range" id="quietZone" min="0" max="8" value="2">
+                        <input type="range" id="quietZone" min="0" max="4" value="2">
                     </div>
 
                     <!-- Export -->

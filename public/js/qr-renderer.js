@@ -22,7 +22,8 @@ const QRRenderer = {
         finderOuterColor: '#000000',
         finderMiddleColor: '#ffffff',
         finderCenterColor: '#000000',
-        backgroundFill: 'light' // 'light', 'dark'
+        backgroundFill: 'light', // 'light', 'dark'
+        finderFullSeparator: false
     },
 
     /**
@@ -413,6 +414,43 @@ const QRRenderer = {
     },
 
     /**
+     * Draw full-sized background rectangles behind each finder pattern,
+     * covering the 8x8 region (7x7 finder + 1-module separator).
+     * The corner facing the QR center is rounded to match the finder shape.
+     */
+    drawFinderBackgrounds(ctx, moduleSize, offset, size) {
+        const color = this.state.finderMiddleColor;
+        const shape = this.state.finderShape;
+        const bgSize = 8 * moduleSize;
+        // Extend outer edges by 1px to prevent sub-pixel anti-aliasing artifacts
+        const pad = 1;
+
+        let r = 0;
+        if (shape === 'rounded') {
+            r = moduleSize * 1.2;
+        } else if (shape === 'circle' || shape === 'hybrid') {
+            r = moduleSize * 3;
+        }
+
+        ctx.fillStyle = color;
+
+        // Top-left finder: extend left and top edges outward
+        ctx.beginPath();
+        ctx.roundRect(offset - pad, offset - pad, bgSize + pad, bgSize + pad, [0, 0, r, 0]);
+        ctx.fill();
+
+        // Top-right finder: extend right and top edges outward
+        ctx.beginPath();
+        ctx.roundRect(offset + (size - 8) * moduleSize, offset - pad, bgSize + pad, bgSize + pad, [0, 0, 0, r]);
+        ctx.fill();
+
+        // Bottom-left finder: extend left and bottom edges outward
+        ctx.beginPath();
+        ctx.roundRect(offset - pad, offset + (size - 8) * moduleSize, bgSize + pad, bgSize + pad, [0, r, 0, 0]);
+        ctx.fill();
+    },
+
+    /**
      * Main render function
      */
     render(canvas, matrix, version) {
@@ -457,7 +495,14 @@ const QRRenderer = {
         for (let row = 0; row < size; row++) {
             for (let col = 0; col < size; col++) {
                 if (this.isFinderPattern(row, col, size)) continue;
-                if (this.isSeparator(row, col, size)) continue;
+                if (this.isSeparator(row, col, size)) {
+                    if (!this.state.finderFullSeparator) {
+                        const moduleX = offset + (col * moduleSize);
+                        const moduleY = offset + (row * moduleSize);
+                        this.drawModule(ctx, moduleX, moduleY, moduleSize, moduleSize, finderMiddle, this.state.moduleShape, sizeFraction);
+                    }
+                    continue;
+                }
 
                 const moduleX = offset + (col * moduleSize);
                 const moduleY = offset + (row * moduleSize);
@@ -469,6 +514,11 @@ const QRRenderer = {
 
                 this.drawModule(ctx, moduleX, moduleY, moduleSize, moduleSize, color, this.state.moduleShape, sizeFraction);
             }
+        }
+
+        // Draw finder backgrounds (full-sized separators) before finders
+        if (this.state.finderFullSeparator) {
+            this.drawFinderBackgrounds(ctx, moduleSize, offset, size);
         }
 
         // Draw finder patterns
@@ -691,7 +741,14 @@ const QRRenderer = {
         for (let row = 0; row < size; row++) {
             for (let col = 0; col < size; col++) {
                 if (this.isFinderPattern(row, col, size)) continue;
-                if (this.isSeparator(row, col, size)) continue;
+                if (this.isSeparator(row, col, size)) {
+                    if (!this.state.finderFullSeparator) {
+                        const moduleX = offset + (col * moduleSize);
+                        const moduleY = offset + (row * moduleSize);
+                        this.drawModule(ctx, moduleX, moduleY, moduleSize, moduleSize, finderMiddle, this.state.moduleShape, sizeFraction);
+                    }
+                    continue;
+                }
 
                 // Check if module belongs to a deleted codeword
                 const cellKey = `${row},${col}`;
@@ -712,6 +769,11 @@ const QRRenderer = {
 
                 this.drawModule(ctx, moduleX, moduleY, moduleSize, moduleSize, color, this.state.moduleShape, sizeFraction);
             }
+        }
+
+        // Draw finder backgrounds (full-sized separators) before finders
+        if (this.state.finderFullSeparator) {
+            this.drawFinderBackgrounds(ctx, moduleSize, offset, size);
         }
 
         // Draw finder patterns
