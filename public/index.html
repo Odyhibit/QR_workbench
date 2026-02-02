@@ -105,8 +105,12 @@
                 </form>
             </div>
 
-            <!-- Next Button -->
-            <div class="step-actions">
+            <!-- Actions -->
+            <div class="step-actions step-actions-split">
+                <div>
+                    <input type="file" id="projectFileInput" accept=".json" hidden>
+                    <button type="button" class="btn btn-secondary" id="loadProjectBtn">Load Project</button>
+                </div>
                 <button type="button" class="btn btn-primary" id="nextBtn1">
                     Continue
                     <svg viewBox="0 0 24 24" fill="currentColor"><path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z"/></svg>
@@ -407,6 +411,12 @@
                             <button type="button" class="btn btn-primary export-delete-btn" data-size="2048">Download 2048px</button>
                         </div>
                     </div>
+
+                    <!-- Save Project -->
+                    <button type="button" class="btn btn-secondary" id="saveProjectBtn"
+                        style="width: 100%; justify-content: center; margin-top: 12px;">
+                        Save Project
+                    </button>
                 </div>
             </div>
 

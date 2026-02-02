@@ -57,6 +57,7 @@ const App = {
         this.setupPaintMode();
         this.setupStyleControls();
         this.setupDeleteStep();
+        this.setupProjectIO();
 
         // Render initial form
         this.renderForm('text');
@@ -2050,7 +2051,7 @@ const App = {
     },
 
     // Export clean PNG without overlays
-    exportCleanPNG(exportSize) {
+    async exportCleanPNG(exportSize) {
         if (!this.state.matrix) return;
 
         const exportCanvas = document.createElement('canvas');
@@ -2065,11 +2066,325 @@ const App = {
             { showOverlays: false }
         );
 
+        const defaultName = `qrcode-${exportSize}px.png`;
+
+        if (window.showSaveFilePicker) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: defaultName,
+                    types: [{ description: 'PNG Image', accept: { 'image/png': ['.png'] } }]
+                });
+                const writable = await handle.createWritable();
+                const blob = await new Promise(resolve => exportCanvas.toBlob(resolve, 'image/png'));
+                await writable.write(blob);
+                await writable.close();
+                return;
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+            }
+        }
+
         const dataURL = exportCanvas.toDataURL('image/png');
         const link = document.createElement('a');
-        link.download = `qrcode-${exportSize}px.png`;
+        link.download = defaultName;
         link.href = dataURL;
         link.click();
+    },
+
+    // ========== PROJECT SAVE / LOAD ==========
+
+    // Wire up Load/Save buttons
+    setupProjectIO() {
+        const loadBtn = document.getElementById('loadProjectBtn');
+        const fileInput = document.getElementById('projectFileInput');
+        const saveBtn = document.getElementById('saveProjectBtn');
+
+        loadBtn.addEventListener('click', () => fileInput.click());
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (ev) => {
+                try {
+                    const data = JSON.parse(ev.target.result);
+                    this.restoreProject(data);
+                } catch (err) {
+                    console.error('Project load error:', err);
+                    alert('Invalid project file');
+                }
+            };
+            reader.readAsText(file);
+            fileInput.value = '';
+        });
+
+        saveBtn.addEventListener('click', () => this.saveProject());
+    },
+
+    // Collect all state into JSON and download
+    async saveProject() {
+        const rs = QRRenderer.state;
+
+        const data = {
+            projectVersion: 1,
+            savedAt: new Date().toISOString(),
+            content: {
+                type: this.state.currentType,
+                formData: { ...this.state.formData }
+            },
+            qr: {
+                version: document.getElementById('versionSelect').value,
+                ecc: document.getElementById('eccSelect').value
+            },
+            logo: rs.logoImage ? {
+                dataUrl: rs.logoImage,
+                x: rs.logoX,
+                y: rs.logoY,
+                scale: rs.logoScale
+            } : null,
+            style: {
+                moduleShape: rs.moduleShape,
+                finderShape: rs.finderShape,
+                moduleSize: rs.moduleSize,
+                colorMode: rs.colorMode,
+                darkPalette: [...rs.darkPalette],
+                lightPalette: [...rs.lightPalette],
+                darkMaxLuminosity: rs.darkMaxLuminosity,
+                lightMinLuminosity: rs.lightMinLuminosity,
+                finderOuterColor: rs.finderOuterColor,
+                finderMiddleColor: rs.finderMiddleColor,
+                finderCenterColor: rs.finderCenterColor,
+                backgroundFill: rs.backgroundFill,
+                quietZone: rs.quietZone
+            },
+            deletedCodewords: Array.from(this.state.deleteState.deletedCodewords),
+            maskPattern: this.state.maskPattern,
+            padBytes: this.state.bitstreamData ? [...this.state.bitstreamData.padBytes] : null
+        };
+
+        const json = JSON.stringify(data, null, 2);
+        const defaultName = 'qr-project.json';
+
+        if (window.showSaveFilePicker) {
+            try {
+                const handle = await window.showSaveFilePicker({
+                    suggestedName: defaultName,
+                    types: [{ description: 'QR Project File', accept: { 'application/json': ['.json'] } }]
+                });
+                const writable = await handle.createWritable();
+                await writable.write(json);
+                await writable.close();
+                return;
+            } catch (e) {
+                if (e.name === 'AbortError') return;
+            }
+        }
+
+        const blob = new Blob([json], { type: 'application/json' });
+        const link = document.createElement('a');
+        link.download = defaultName;
+        link.href = URL.createObjectURL(blob);
+        link.click();
+        URL.revokeObjectURL(link.href);
+    },
+
+    // Restore project state from parsed JSON
+    restoreProject(data) {
+        const rs = QRRenderer.state;
+
+        // (a) Content
+        const type = data.content?.type || 'text';
+        this.state.currentType = type;
+        this.state.formData = { ...data.content?.formData };
+
+        // Update type card active states
+        document.querySelectorAll('.type-card').forEach(card => {
+            card.classList.toggle('active', card.dataset.type === type);
+        });
+
+        // Render form and populate fields
+        this.renderForm(type);
+        // renderForm clears formData, so restore it again
+        this.state.formData = { ...data.content?.formData };
+
+        // Populate form inputs
+        const formData = data.content?.formData || {};
+        Object.keys(formData).forEach(fieldName => {
+            const input = document.querySelector(`[data-field-name="${fieldName}"]`);
+            if (!input) return;
+            if (input.type === 'checkbox') {
+                input.checked = !!formData[fieldName];
+            } else {
+                input.value = formData[fieldName];
+            }
+        });
+
+        // (b) QR settings
+        if (data.qr) {
+            document.getElementById('versionSelect').value = data.qr.version || 'auto';
+            document.getElementById('eccSelect').value = data.qr.ecc || 'M';
+        }
+
+        // (c) Style
+        const style = data.style || {};
+        rs.moduleShape = style.moduleShape || 'cushion';
+        rs.finderShape = style.finderShape || 'rounded';
+        rs.moduleSize = style.moduleSize ?? 80;
+        rs.colorMode = style.colorMode || 'palette';
+        rs.darkPalette = style.darkPalette || ['#000000', '#333333', '#1a1a1a', '#0d0d0d'];
+        rs.lightPalette = style.lightPalette || ['#ffffff', '#f0f0f0', '#e0e0e0', '#d0d0d0'];
+        rs.darkMaxLuminosity = style.darkMaxLuminosity ?? 33;
+        rs.lightMinLuminosity = style.lightMinLuminosity ?? 66;
+        rs.finderOuterColor = style.finderOuterColor || '#000000';
+        rs.finderMiddleColor = style.finderMiddleColor || '#ffffff';
+        rs.finderCenterColor = style.finderCenterColor || '#000000';
+        rs.backgroundFill = style.backgroundFill || 'light';
+        rs.quietZone = style.quietZone ?? 2;
+
+        // Update module shape buttons
+        document.querySelectorAll('.shape-btn:not(.finder-shape-btn)').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.shape === rs.moduleShape);
+        });
+
+        // Update finder shape buttons
+        document.querySelectorAll('.finder-shape-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.finder === rs.finderShape);
+        });
+
+        // Module size slider
+        document.getElementById('moduleSize').value = rs.moduleSize;
+        document.getElementById('moduleSizeValue').textContent = rs.moduleSize;
+
+        // Color mode select
+        document.getElementById('colorMode').value = rs.colorMode;
+
+        // Show/hide palette vs gradient controls
+        const paletteDisplay = document.getElementById('paletteDisplay');
+        const gradientControls = document.getElementById('gradientControls');
+        paletteDisplay.style.display = rs.colorMode === 'palette' ? 'block' : 'none';
+        gradientControls.style.display = rs.colorMode === 'gradient' ? 'block' : 'none';
+
+        // Palette pickers
+        this.displayPalette();
+
+        // Gradient sliders
+        document.getElementById('darkMaxLum').value = rs.darkMaxLuminosity;
+        document.getElementById('darkLumValue').textContent = rs.darkMaxLuminosity;
+        document.getElementById('lightMinLum').value = rs.lightMinLuminosity;
+        document.getElementById('lightLumValue').textContent = rs.lightMinLuminosity;
+
+        // Finder color pickers
+        document.getElementById('finderOuterColor').value = rs.finderOuterColor;
+        document.getElementById('finderMiddleColor').value = rs.finderMiddleColor;
+        document.getElementById('finderCenterColor').value = rs.finderCenterColor;
+
+        // Background fill
+        document.getElementById('backgroundFill').value = rs.backgroundFill;
+
+        // Quiet zone
+        document.getElementById('quietZone').value = rs.quietZone;
+        document.getElementById('quietZoneValue').textContent = rs.quietZone;
+
+        // (d) Logo
+        const finishRestore = () => {
+            // Cancel any pending debounced update from renderForm
+            clearTimeout(this.state.debounceTimer);
+
+            // (e) Generate QR
+            this.generateQR();
+
+            // Restore padding modifications and mask pattern if saved
+            if (data.padBytes && data.padBytes.length > 0 && this.state.bitstreamData) {
+                const paddingInfo = this.identifyPaddingBytes();
+                if (paddingInfo && paddingInfo.paddingByteIndices.length === data.padBytes.length) {
+                    const messageBytes = paddingInfo.startByteIndex;
+                    data.padBytes.forEach((byte, idx) => {
+                        this.state.bitstreamData.dataBytes[messageBytes + idx] = byte;
+                    });
+                    this.state.bitstreamData.padBytes = [...data.padBytes];
+                    this.state.originalPaddingBytes = [...data.padBytes];
+                    this.state.maskPattern = data.maskPattern ?? 0;
+
+                    // Recalculate ECC and regenerate matrix with saved mask
+                    const version = this.state.version;
+                    const eccLevel = this.state.eccLevel;
+                    const size = this.state.matrix.length;
+
+                    let blocks = splitIntoBlocks(this.state.bitstreamData.dataBytes, version, eccLevel, blockSizeTable);
+                    blocks = calculateEccForBlocks(blocks);
+                    this.state.blocks = blocks;
+
+                    const interleaved = interleaveBlocks(blocks);
+                    const matrix = createMatrix(size);
+                    placeFunctionPatterns(matrix, version);
+                    placeDataBits(matrix, interleaved);
+                    applyMask(matrix, this.state.maskPattern, version);
+                    placeFormatInfo(matrix, eccLevel, this.state.maskPattern, version);
+                    placeVersionInfo(matrix, version);
+                    this.state.matrix = matrix;
+
+                    this.buildPaddingModuleMap();
+                }
+            }
+
+            this.renderPreview();
+
+            // (f) Deletions — store pending set
+            if (data.deletedCodewords && data.deletedCodewords.length > 0) {
+                this.state.deleteState.deletedCodewords = new Set(data.deletedCodewords);
+            }
+
+            // (g) Navigate to Step 1
+            this.goToStep(1);
+        };
+
+        if (data.logo && data.logo.dataUrl) {
+            const img = new Image();
+            img.onload = () => {
+                rs.logoImage = data.logo.dataUrl;
+                rs.logoImg = img;
+
+                // Build logoImageData via temp canvas
+                const tempCanvas = document.createElement('canvas');
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCanvas.width = img.width;
+                tempCanvas.height = img.height;
+                tempCtx.drawImage(img, 0, 0);
+                rs.logoImageData = tempCtx.getImageData(0, 0, img.width, img.height);
+
+                rs.logoX = data.logo.x ?? 50;
+                rs.logoY = data.logo.y ?? 50;
+                rs.logoScale = data.logo.scale ?? 100;
+
+                // Show logo UI elements
+                document.getElementById('clearLogoBtn').style.display = 'inline-flex';
+                document.getElementById('logoAdjustments').style.display = 'block';
+                document.getElementById('logoCanvasHint').style.display = 'none';
+                document.getElementById('optimizeMaskSection').style.display = 'block';
+                document.getElementById('moduleColorMode').style.display = 'block';
+                document.getElementById('backgroundFillGroup').style.display = 'block';
+
+                // Logo scale slider
+                document.getElementById('logoScale').value = rs.logoScale;
+                document.getElementById('logoScaleValue').textContent = rs.logoScale;
+
+                // Re-show palette if palette mode
+                if (rs.colorMode === 'palette') {
+                    paletteDisplay.style.display = 'block';
+                    this.displayPalette();
+                }
+
+                finishRestore();
+            };
+            img.onerror = () => {
+                console.error('Failed to load logo from project file');
+                finishRestore();
+            };
+            img.src = data.logo.dataUrl;
+        } else {
+            finishRestore();
+        }
     },
 
     // Optimize mask pattern for best logo match (including padding modification)
