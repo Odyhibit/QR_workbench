@@ -32,6 +32,10 @@ const App = {
         isPaintingModule: false,
         paintUpdateTimeout: null,
         lastHighlightCell: null,
+        // Box selection state (shift+drag)
+        isBoxSelecting: false,
+        boxSelectStart: null,
+        boxSelectEnd: null,
         // Delete step state
         deleteState: {
             deletedCodewords: new Set(),
@@ -1227,15 +1231,23 @@ const App = {
         const version = this.state.version;
         const size = 21 + (version - 1) * 4;
 
-        // Save original dataBytes
+        // Save original dataBytes (includes any baked-in paint edits)
         const originalDataBytes = [...this.state.bitstreamData.dataBytes];
 
         // Step 1: Get padding edits for this mask pattern
         const testPaddingEdits = new Map();
         const editableCells = this.state.editableCells;
 
-        // Generate matrix with this mask to see current values
-        let testMatrix = this.generateQRWithMask(maskPattern);
+        // Generate matrix from current dataBytes with this mask to preserve painted state
+        let testBlocks = splitIntoBlocks([...originalDataBytes], version, this.state.eccLevel, blockSizeTable);
+        calculateEccForBlocks(testBlocks);
+        let testInterleaved = interleaveBlocks(testBlocks);
+        let testMatrix = createMatrix(size);
+        placeFunctionPatterns(testMatrix, version);
+        placeDataBits(testMatrix, testInterleaved);
+        applyMask(testMatrix, maskPattern, version);
+        placeFormatInfo(testMatrix, this.state.eccLevel, maskPattern, version);
+        placeVersionInfo(testMatrix, version);
 
         editableCells.forEach(cellKey => {
             const [row, col] = cellKey.split(',').map(Number);
@@ -1270,14 +1282,14 @@ const App = {
         });
 
         // Step 4: Recalculate ECC with new padding
-        const testBlocks = splitIntoBlocks(testDataBytes, version, this.state.eccLevel, blockSizeTable);
+        testBlocks = splitIntoBlocks(testDataBytes, version, this.state.eccLevel, blockSizeTable);
         calculateEccForBlocks(testBlocks);
 
         // Step 5: Regenerate matrix with new data+ECC
-        const newInterleaved = interleaveBlocks(testBlocks);
+        testInterleaved = interleaveBlocks(testBlocks);
         testMatrix = createMatrix(size);
         placeFunctionPatterns(testMatrix, version);
-        placeDataBits(testMatrix, newInterleaved);
+        placeDataBits(testMatrix, testInterleaved);
         applyMask(testMatrix, maskPattern, version);
         placeFormatInfo(testMatrix, this.state.eccLevel, maskPattern, version);
         placeVersionInfo(testMatrix, version);
@@ -1438,7 +1450,7 @@ const App = {
                 // Update mode hint
                 const modeHint = document.getElementById('modeHint');
                 if (modeHint) {
-                    modeHint.textContent = mode === 'paint' ? 'Click modules to paint' : 'Drag to move logo';
+                    modeHint.textContent = mode === 'paint' ? 'Click to paint, Shift+drag to fill area' : 'Drag to move logo';
                 }
 
                 // Toggle canvas CSS class
@@ -1468,7 +1480,14 @@ const App = {
         // Canvas paint event handlers
         canvas.addEventListener('mousemove', (e) => {
             if (this.state.interactionMode !== 'paint') return;
-            if (this.state.isPaintingModule) {
+            if (this.state.isBoxSelecting) {
+                const cell = this.canvasEventToCell(e);
+                if (cell) {
+                    this.state.boxSelectEnd = cell;
+                    this.renderLogoCanvas();
+                    this.drawBoxSelection();
+                }
+            } else if (this.state.isPaintingModule) {
                 this.paintModuleAt(e);
             } else {
                 this.highlightModuleAt(e);
@@ -1476,14 +1495,26 @@ const App = {
         });
 
         canvas.addEventListener('mouseup', () => {
-            if (this.state.isPaintingModule) {
+            if (this.state.isBoxSelecting) {
+                this.applyBoxSelection();
+                this.state.isBoxSelecting = false;
+                this.state.boxSelectStart = null;
+                this.state.boxSelectEnd = null;
+                this.renderLogoCanvas();
+            } else if (this.state.isPaintingModule) {
                 this.state.isPaintingModule = false;
                 this.schedulePaintUpdate();
             }
         });
 
         canvas.addEventListener('mouseleave', () => {
-            if (this.state.isPaintingModule) {
+            if (this.state.isBoxSelecting) {
+                this.applyBoxSelection();
+                this.state.isBoxSelecting = false;
+                this.state.boxSelectStart = null;
+                this.state.boxSelectEnd = null;
+                this.renderLogoCanvas();
+            } else if (this.state.isPaintingModule) {
                 this.state.isPaintingModule = false;
                 this.schedulePaintUpdate();
             }
@@ -1535,8 +1566,19 @@ const App = {
     // Handle paint start (mousedown/touchstart in paint mode)
     handlePaintStart(e) {
         if (!this.state.matrix) return;
-        this.state.isPaintingModule = true;
-        this.paintModuleAt(e);
+
+        if (e.shiftKey) {
+            // Start box selection
+            const cell = this.canvasEventToCell(e);
+            if (cell) {
+                this.state.isBoxSelecting = true;
+                this.state.boxSelectStart = cell;
+                this.state.boxSelectEnd = cell;
+            }
+        } else {
+            this.state.isPaintingModule = true;
+            this.paintModuleAt(e);
+        }
         if (e.preventDefault) e.preventDefault();
     },
 
@@ -1569,6 +1611,69 @@ const App = {
             const canvas = document.getElementById('logoCanvas');
             const size = this.state.matrix.length;
             QRRenderer.drawCellHighlight(canvas, cell.row, cell.col, size, QRRenderer.state.quietZone);
+        }
+    },
+
+    // Draw box selection overlay on the canvas
+    drawBoxSelection() {
+        const start = this.state.boxSelectStart;
+        const end = this.state.boxSelectEnd;
+        if (!start || !end) return;
+
+        const canvas = document.getElementById('logoCanvas');
+        const ctx = canvas.getContext('2d');
+        const size = this.state.matrix.length;
+        const quietZone = QRRenderer.state.quietZone;
+        const totalSize = size + (quietZone * 2);
+        const moduleSize = canvas.width / totalSize;
+        const offset = quietZone * moduleSize;
+
+        const minRow = Math.min(start.row, end.row);
+        const maxRow = Math.max(start.row, end.row);
+        const minCol = Math.min(start.col, end.col);
+        const maxCol = Math.max(start.col, end.col);
+
+        const x = offset + minCol * moduleSize;
+        const y = offset + minRow * moduleSize;
+        const w = (maxCol - minCol + 1) * moduleSize;
+        const h = (maxRow - minRow + 1) * moduleSize;
+
+        ctx.fillStyle = 'rgba(74, 158, 255, 0.2)';
+        ctx.fillRect(x, y, w, h);
+
+        ctx.strokeStyle = '#4a9eff';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+    },
+
+    // Apply box selection: paint all editable cells in the rectangle
+    applyBoxSelection() {
+        const start = this.state.boxSelectStart;
+        const end = this.state.boxSelectEnd;
+        if (!start || !end) return;
+
+        const minRow = Math.min(start.row, end.row);
+        const maxRow = Math.max(start.row, end.row);
+        const minCol = Math.min(start.col, end.col);
+        const maxCol = Math.max(start.col, end.col);
+
+        const wantDark = this.state.brushMode === 'black';
+        let editCount = 0;
+
+        for (let row = minRow; row <= maxRow; row++) {
+            for (let col = minCol; col <= maxCol; col++) {
+                const cellKey = `${row},${col}`;
+                if (this.state.editableCells.has(cellKey)) {
+                    this.state.paddingEdits.set(cellKey, wantDark);
+                    editCount++;
+                }
+            }
+        }
+
+        if (editCount > 0) {
+            this.schedulePaintUpdate();
         }
     },
 
@@ -2400,6 +2505,11 @@ const App = {
     optimizeMaskForLogo() {
         if (!QRRenderer.state.logoImg) {
             return;
+        }
+
+        // Bake in any pending paint edits so optimization starts from current state
+        if (this.state.paddingEdits.size > 0) {
+            this.updateQRFromPaddingEdits();
         }
 
         const resultEl = document.getElementById('optimizeResult');

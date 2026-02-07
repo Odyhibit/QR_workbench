@@ -190,12 +190,18 @@ const QRRenderer = {
         let sampledRgba = this.sampleLogo(canvasX, canvasY, qrAreaSize);
 
         if (!sampledRgba || sampledRgba[3] < 128) {
-            // Outside logo or transparent - use default
+            // Outside logo or transparent - use defaults based on color mode
             if (this.state.colorMode === 'palette') {
                 const palette = isDark ? this.state.darkPalette : this.state.lightPalette;
                 return palette[0];
             }
-            sampledRgba = isDark ? [0, 0, 0, 255] : [255, 255, 255, 255];
+            // Gradient mode: use background fill color so sliders control the result
+            const bgPalette = this.state.backgroundFill === 'dark' ? this.state.darkPalette : this.state.lightPalette;
+            const hex = bgPalette[0] || (this.state.backgroundFill === 'dark' ? '#000000' : '#ffffff');
+            const r = parseInt(hex.slice(1, 3), 16);
+            const g = parseInt(hex.slice(3, 5), 16);
+            const b = parseInt(hex.slice(5, 7), 16);
+            sampledRgba = [r, g, b, 255];
         }
 
         const sampledRgb = [sampledRgba[0], sampledRgba[1], sampledRgba[2]];
@@ -231,7 +237,7 @@ const QRRenderer = {
         if (!quietZone || quietZone <= 0) return;
 
         const quietZonePixels = quietZone * moduleSize;
-        ctx.fillStyle = '#ffffff';
+        ctx.fillStyle = this.state.finderMiddleColor;
         ctx.fillRect(0, 0, canvasSize, quietZonePixels);
         ctx.fillRect(0, canvasSize - quietZonePixels, canvasSize, quietZonePixels);
         ctx.fillRect(0, 0, quietZonePixels, canvasSize);
