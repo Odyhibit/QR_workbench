@@ -24,6 +24,7 @@ const QRTypes = {
                 { name: 'url', label: 'Website URL', type: 'url', placeholder: 'https://example.com', required: true }
             ],
             format: (data) => {
+                if (!data.url) return '';
                 let url = data.url.trim();
                 // Add https:// if no protocol specified
                 if (url && !url.match(/^https?:\/\//i)) {

@@ -301,6 +301,21 @@
                         <input type="range" id="moduleSize" min="20" max="100" value="80">
                     </div>
 
+                    <!-- Simple Module Colors (visible when no logo) -->
+                    <div id="simpleColorMode" class="control-group">
+                        <h3>Module Colors</h3>
+                        <div class="palette-display" style="display: block;">
+                            <div class="palette-row">
+                                <span class="palette-label">Dark</span>
+                                <input type="color" id="simpleDarkColor" value="#000000">
+                            </div>
+                            <div class="palette-row">
+                                <span class="palette-label">Light</span>
+                                <input type="color" id="simpleLightColor" value="#ffffff">
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Module Colors (visible when logo loaded) -->
                     <div id="moduleColorMode" class="control-group" style="display: none;">
                         <h3>Module Colors</h3>
@@ -368,9 +383,20 @@
             <div class="delete-step-layout">
                 <!-- Left: Canvas area -->
                 <div class="delete-canvas-container">
+                    <!-- Mode controls -->
+                    <div id="deletePaintModeControls" class="paint-mode-controls">
+                        <div class="mode-toggle">
+                            <button type="button" class="mode-btn active" data-mode="delete">Delete Codewords</button>
+                            <button type="button" class="mode-btn" data-mode="paint">Paint Deleted</button>
+                        </div>
+                        <div id="deleteBrushControls" class="brush-controls" style="display: none;">
+                            <button type="button" class="brush-btn active" data-brush="black" title="Black">&#9632;</button>
+                            <button type="button" class="brush-btn" data-brush="white" title="White">&#9633;</button>
+                        </div>
+                        <span id="deleteModeHint" class="mode-hint">Click to delete/restore codewords</span>
+                    </div>
                     <canvas id="deleteCanvas" width="500" height="500"></canvas>
                     <div id="deleteHoverIndicator" class="delete-hover-indicator" style="display: none;"></div>
-                    <p class="canvas-hint">Click a module to delete its codeword (8 modules)</p>
                 </div>
 
                 <!-- Right: Side panel -->

@@ -39,6 +39,7 @@ const App = {
         // Delete step state
         deleteState: {
             deletedCodewords: new Set(),
+            deletedModuleEdits: new Map(), // "row,col" → boolean (true=dark) for painted deleted modules
             hoveredCodewordIndex: null,
             hoveredBlockIndex: null,
             codewordMap: null,
@@ -47,7 +48,14 @@ const App = {
             totalCodewords: 0,
             blockColors: ['#FF6B6B','#4ECDC4','#45B7D1','#FFA07A','#98D8C8',
                           '#F7DC6F','#BB8FCE','#85C1E2','#F8B88B','#ABEBC6'],
-            hideOverlays: false
+            hideOverlays: false,
+            // Paint mode for deleted modules
+            interactionMode: 'delete', // 'delete' or 'paint'
+            brushMode: 'black',
+            isPainting: false,
+            isBoxSelecting: false,
+            boxSelectStart: null,
+            boxSelectEnd: null
         },
         deleteEventsInitialized: false
     },
@@ -349,6 +357,7 @@ const App = {
 
             // Clear delete state on regeneration
             this.state.deleteState.deletedCodewords = new Set();
+            this.state.deleteState.deletedModuleEdits = new Map();
             this.state.deleteState.codewordMap = null;
             this.state.deleteState.reverseMap = null;
             this.state.deleteState.blockInfo = [];
@@ -368,6 +377,23 @@ const App = {
                 version = this.findMinVersion(content, mode, eccLevel);
             } else {
                 version = parseInt(version);
+                // Check if selected version can fit the content at this ECC level
+                // If not, find the minimum version that works (but never go below selected)
+                const minRequired = this.findMinVersion(content, mode, eccLevel);
+                if (minRequired > version) {
+                    version = minRequired;
+                    // Update the dropdown to reflect the auto-increased version
+                    const versionSelect = document.getElementById('versionSelect');
+                    if (versionSelect) {
+                        // Find a matching option or set to closest higher one
+                        const options = Array.from(versionSelect.options).map(o => o.value);
+                        const validOption = options.find(o => o !== 'auto' && parseInt(o) >= version);
+                        if (validOption) {
+                            versionSelect.value = validOption;
+                            version = parseInt(validOption);
+                        }
+                    }
+                }
             }
 
             this.state.version = version;
@@ -533,19 +559,21 @@ const App = {
                     if (optimizeMaskSection) optimizeMaskSection.style.display = 'block';
                     const moduleColorMode = document.getElementById('moduleColorMode');
                     if (moduleColorMode) moduleColorMode.style.display = 'block';
+                    const simpleColorMode = document.getElementById('simpleColorMode');
+                    if (simpleColorMode) simpleColorMode.style.display = 'none';
                     const backgroundFillGroup = document.getElementById('backgroundFillGroup');
                     if (backgroundFillGroup) backgroundFillGroup.style.display = 'block';
+
+                    // Switch to palette mode for logo
+                    QRRenderer.state.colorMode = 'palette';
+                    document.getElementById('colorMode').value = 'palette';
 
                     // Auto-detect background fill
                     this.autoDetectBackgroundFill();
 
                     // Refresh palette pickers with newly extracted colors
                     this.displayPalette();
-                    // Show palette sub-controls if palette mode is active
-                    const colorMode = document.getElementById('colorMode').value;
-                    if (colorMode === 'palette') {
-                        document.getElementById('paletteDisplay').style.display = 'block';
-                    }
+                    document.getElementById('paletteDisplay').style.display = 'block';
 
                     this.renderLogoCanvas();
                 });
@@ -561,15 +589,17 @@ const App = {
             logoCanvas.classList.remove('draggable');
             this.resetPaintModeUI();
 
-            // Hide optimize section and color mode, reset to default
+            // Hide optimize section and color mode, switch to simple colors
             const optimizeMaskSection = document.getElementById('optimizeMaskSection');
             if (optimizeMaskSection) optimizeMaskSection.style.display = 'none';
             const optimizeResult = document.getElementById('optimizeResult');
             if (optimizeResult) optimizeResult.style.display = 'none';
             const moduleColorMode = document.getElementById('moduleColorMode');
             if (moduleColorMode) moduleColorMode.style.display = 'none';
+            const simpleColorMode = document.getElementById('simpleColorMode');
+            if (simpleColorMode) simpleColorMode.style.display = 'block';
             document.getElementById('colorMode').value = 'palette';
-            QRRenderer.state.colorMode = 'palette';
+            QRRenderer.state.colorMode = 'simple';
             const paletteDisplay = document.getElementById('paletteDisplay');
             if (paletteDisplay) paletteDisplay.style.display = 'none';
             const gradientControls = document.getElementById('gradientControls');
@@ -816,6 +846,16 @@ const App = {
         // Full-sized separator checkbox
         document.getElementById('finderFullSeparator').addEventListener('change', (e) => {
             QRRenderer.state.finderFullSeparator = e.target.checked;
+            this.renderMainCanvas();
+        });
+
+        // Simple color pickers (no logo mode)
+        document.getElementById('simpleDarkColor').addEventListener('input', (e) => {
+            QRRenderer.state.simpleDarkColor = e.target.value;
+            this.renderMainCanvas();
+        });
+        document.getElementById('simpleLightColor').addEventListener('input', (e) => {
+            QRRenderer.state.simpleLightColor = e.target.value;
             this.renderMainCanvas();
         });
 
@@ -1939,10 +1979,42 @@ const App = {
         const canvas = document.getElementById('deleteCanvas');
         if (!canvas) return;
 
-        // Delete canvas mouse events
-        canvas.addEventListener('mousemove', (e) => {
-            if (!this.state.matrix || !this.state.deleteState.reverseMap) return;
+        const ds = this.state.deleteState;
 
+        // Mode toggle buttons
+        document.querySelectorAll('#deletePaintModeControls .mode-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const mode = btn.dataset.mode;
+                ds.interactionMode = mode;
+
+                document.querySelectorAll('#deletePaintModeControls .mode-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+
+                const brushControls = document.getElementById('deleteBrushControls');
+                brushControls.style.display = mode === 'paint' ? 'flex' : 'none';
+
+                const modeHint = document.getElementById('deleteModeHint');
+                if (modeHint) {
+                    modeHint.textContent = mode === 'paint'
+                        ? 'Click to paint, Shift+drag to fill area'
+                        : 'Click to delete/restore codewords';
+                }
+
+                this.renderDeleteCanvas();
+            });
+        });
+
+        // Brush buttons
+        document.querySelectorAll('#deleteBrushControls .brush-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                ds.brushMode = btn.dataset.brush;
+                document.querySelectorAll('#deleteBrushControls .brush-btn').forEach(b => b.classList.remove('active'));
+                btn.classList.add('active');
+            });
+        });
+
+        // Helper to get cell from event
+        const getCellFromEvent = (e) => {
             const rect = canvas.getBoundingClientRect();
             const scaleX = canvas.width / rect.width;
             const scaleY = canvas.height / rect.height;
@@ -1958,61 +2030,135 @@ const App = {
             const col = Math.floor((px - offset) / moduleSize);
             const row = Math.floor((py - offset) / moduleSize);
 
-            if (row >= 0 && row < size && col >= 0 && col < size) {
-                const cwIdx = this.getCodewordIndexForModule(row, col);
+            if (row < 0 || row >= size || col < 0 || col >= size) return null;
+            return { row, col };
+        };
+
+        // Check if a cell is part of a deleted codeword
+        const isDeletedCell = (row, col) => {
+            const cwIdx = this.getCodewordIndexForModule(row, col);
+            return cwIdx !== null && ds.deletedCodewords.has(cwIdx);
+        };
+
+        // Paint a deleted module
+        const paintDeletedModule = (row, col) => {
+            if (!isDeletedCell(row, col)) return false;
+            const cellKey = `${row},${col}`;
+            const wantDark = ds.brushMode === 'black';
+            ds.deletedModuleEdits.set(cellKey, wantDark);
+            return true;
+        };
+
+        // Mousedown
+        canvas.addEventListener('mousedown', (e) => {
+            if (!this.state.matrix) return;
+
+            if (ds.interactionMode === 'paint') {
+                const cell = getCellFromEvent(e);
+                if (!cell) return;
+
+                if (e.shiftKey) {
+                    ds.isBoxSelecting = true;
+                    ds.boxSelectStart = cell;
+                    ds.boxSelectEnd = cell;
+                } else {
+                    ds.isPainting = true;
+                    paintDeletedModule(cell.row, cell.col);
+                    this.renderDeleteCanvas();
+                }
+                e.preventDefault();
+            }
+        });
+
+        // Mousemove
+        canvas.addEventListener('mousemove', (e) => {
+            if (!this.state.matrix || !ds.reverseMap) return;
+
+            if (ds.interactionMode === 'paint') {
+                if (ds.isBoxSelecting) {
+                    const cell = getCellFromEvent(e);
+                    if (cell) {
+                        ds.boxSelectEnd = cell;
+                        this.renderDeleteCanvas();
+                        this.drawDeleteBoxSelection();
+                    }
+                } else if (ds.isPainting) {
+                    const cell = getCellFromEvent(e);
+                    if (cell && paintDeletedModule(cell.row, cell.col)) {
+                        this.renderDeleteCanvas();
+                    }
+                }
+                return;
+            }
+
+            // Delete mode: hover highlighting
+            const cell = getCellFromEvent(e);
+            if (cell) {
+                const cwIdx = this.getCodewordIndexForModule(cell.row, cell.col);
                 const blockIdx = cwIdx !== null ? this.getBlockIndexForCodeword(cwIdx) : null;
 
-                if (cwIdx !== this.state.deleteState.hoveredCodewordIndex ||
-                    blockIdx !== this.state.deleteState.hoveredBlockIndex) {
-                    this.state.deleteState.hoveredCodewordIndex = cwIdx;
-                    this.state.deleteState.hoveredBlockIndex = blockIdx;
+                if (cwIdx !== ds.hoveredCodewordIndex || blockIdx !== ds.hoveredBlockIndex) {
+                    ds.hoveredCodewordIndex = cwIdx;
+                    ds.hoveredBlockIndex = blockIdx;
                     this.updateDeleteHoverIndicator();
                     this.renderDeleteCanvas();
                 }
             }
         });
 
+        // Mouseup
+        canvas.addEventListener('mouseup', () => {
+            if (ds.isBoxSelecting) {
+                this.applyDeleteBoxSelection();
+                ds.isBoxSelecting = false;
+                ds.boxSelectStart = null;
+                ds.boxSelectEnd = null;
+                this.renderDeleteCanvas();
+            }
+            ds.isPainting = false;
+        });
+
+        // Mouseleave
         canvas.addEventListener('mouseleave', () => {
-            this.state.deleteState.hoveredCodewordIndex = null;
-            this.state.deleteState.hoveredBlockIndex = null;
+            if (ds.isBoxSelecting) {
+                this.applyDeleteBoxSelection();
+                ds.isBoxSelecting = false;
+                ds.boxSelectStart = null;
+                ds.boxSelectEnd = null;
+            }
+            ds.isPainting = false;
+            ds.hoveredCodewordIndex = null;
+            ds.hoveredBlockIndex = null;
             this.updateDeleteHoverIndicator();
             this.renderDeleteCanvas();
         });
 
+        // Click (for delete mode)
         canvas.addEventListener('click', (e) => {
-            if (!this.state.matrix || !this.state.deleteState.reverseMap) return;
+            if (!this.state.matrix || !ds.reverseMap) return;
+            if (ds.interactionMode !== 'delete') return;
 
-            const rect = canvas.getBoundingClientRect();
-            const scaleX = canvas.width / rect.width;
-            const scaleY = canvas.height / rect.height;
-            const px = (e.clientX - rect.left) * scaleX;
-            const py = (e.clientY - rect.top) * scaleY;
+            const cell = getCellFromEvent(e);
+            if (!cell) return;
 
-            const size = this.state.matrix.length;
-            const quietZone = QRRenderer.state.quietZone;
-            const totalSize = size + (quietZone * 2);
-            const moduleSize = canvas.width / totalSize;
-            const offset = quietZone * moduleSize;
+            const cwIdx = this.getCodewordIndexForModule(cell.row, cell.col);
+            if (cwIdx === null) return;
 
-            const col = Math.floor((px - offset) / moduleSize);
-            const row = Math.floor((py - offset) / moduleSize);
-
-            if (row < 0 || row >= size || col < 0 || col >= size) return;
-
-            const cwIdx = this.getCodewordIndexForModule(row, col);
-            if (cwIdx === null) return; // Function module, ignore
-
-            const ds = this.state.deleteState;
             const blockIndex = this.getBlockIndexForCodeword(cwIdx);
 
             if (ds.deletedCodewords.has(cwIdx)) {
-                // Restore
                 ds.deletedCodewords.delete(cwIdx);
+                // Clear any module edits for this codeword
+                const cwData = ds.codewordMap.get(cwIdx);
+                if (cwData) {
+                    cwData.positions.forEach(pos => {
+                        ds.deletedModuleEdits.delete(`${pos.row},${pos.col}`);
+                    });
+                }
                 if (blockIndex !== null && ds.blockInfo[blockIndex]) {
                     ds.blockInfo[blockIndex].deletedCount--;
                 }
             } else {
-                // Check ECC capacity
                 if (blockIndex !== null && ds.blockInfo[blockIndex]) {
                     const block = ds.blockInfo[blockIndex];
                     const maxErrors = Math.floor(block.eccCount / 2);
@@ -2038,10 +2184,10 @@ const App = {
 
         // Reset deletions button
         document.getElementById('resetDeletionsBtn').addEventListener('click', () => {
-            const ds = this.state.deleteState;
-            if (ds.deletedCodewords.size === 0) return;
+            if (ds.deletedCodewords.size === 0 && ds.deletedModuleEdits.size === 0) return;
 
             ds.deletedCodewords.clear();
+            ds.deletedModuleEdits.clear();
             if (ds.blockInfo) {
                 ds.blockInfo.forEach(block => { block.deletedCount = 0; });
             }
@@ -2060,7 +2206,7 @@ const App = {
 
         // Hide deleted preview checkbox
         document.getElementById('hideDeletedPreview').addEventListener('change', (e) => {
-            this.state.deleteState.hideOverlays = e.target.checked;
+            ds.hideOverlays = e.target.checked;
             this.renderDeleteCanvas();
         });
 
@@ -2072,6 +2218,65 @@ const App = {
             quietZoneValue.textContent = e.target.value;
             this.renderDeleteCanvas();
         });
+    },
+
+    // Draw box selection overlay on delete canvas
+    drawDeleteBoxSelection() {
+        const ds = this.state.deleteState;
+        const start = ds.boxSelectStart;
+        const end = ds.boxSelectEnd;
+        if (!start || !end) return;
+
+        const canvas = document.getElementById('deleteCanvas');
+        const ctx = canvas.getContext('2d');
+        const size = this.state.matrix.length;
+        const quietZone = QRRenderer.state.quietZone;
+        const totalSize = size + (quietZone * 2);
+        const moduleSize = canvas.width / totalSize;
+        const offset = quietZone * moduleSize;
+
+        const minRow = Math.min(start.row, end.row);
+        const maxRow = Math.max(start.row, end.row);
+        const minCol = Math.min(start.col, end.col);
+        const maxCol = Math.max(start.col, end.col);
+
+        const x = offset + minCol * moduleSize;
+        const y = offset + minRow * moduleSize;
+        const w = (maxCol - minCol + 1) * moduleSize;
+        const h = (maxRow - minRow + 1) * moduleSize;
+
+        ctx.fillStyle = 'rgba(74, 158, 255, 0.2)';
+        ctx.fillRect(x, y, w, h);
+
+        ctx.strokeStyle = '#4a9eff';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([5, 5]);
+        ctx.strokeRect(x, y, w, h);
+        ctx.setLineDash([]);
+    },
+
+    // Apply box selection to deleted modules
+    applyDeleteBoxSelection() {
+        const ds = this.state.deleteState;
+        const start = ds.boxSelectStart;
+        const end = ds.boxSelectEnd;
+        if (!start || !end) return;
+
+        const minRow = Math.min(start.row, end.row);
+        const maxRow = Math.max(start.row, end.row);
+        const minCol = Math.min(start.col, end.col);
+        const maxCol = Math.max(start.col, end.col);
+
+        const wantDark = ds.brushMode === 'black';
+
+        for (let row = minRow; row <= maxRow; row++) {
+            for (let col = minCol; col <= maxCol; col++) {
+                const cwIdx = this.getCodewordIndexForModule(row, col);
+                if (cwIdx !== null && ds.deletedCodewords.has(cwIdx)) {
+                    ds.deletedModuleEdits.set(`${row},${col}`, wantDark);
+                }
+            }
+        }
     },
 
     // Update the block legend in Step 4 side panel
@@ -2268,9 +2473,12 @@ const App = {
                 finderCenterColor: rs.finderCenterColor,
                 backgroundFill: rs.backgroundFill,
                 quietZone: rs.quietZone,
-                finderFullSeparator: rs.finderFullSeparator
+                finderFullSeparator: rs.finderFullSeparator,
+                simpleDarkColor: rs.simpleDarkColor,
+                simpleLightColor: rs.simpleLightColor
             },
             deletedCodewords: Array.from(this.state.deleteState.deletedCodewords),
+            deletedModuleEdits: Array.from(this.state.deleteState.deletedModuleEdits.entries()),
             maskPattern: this.state.maskPattern,
             padBytes: this.state.bitstreamData ? [...this.state.bitstreamData.padBytes] : null
         };
@@ -2354,6 +2562,8 @@ const App = {
         rs.backgroundFill = style.backgroundFill || 'light';
         rs.quietZone = style.quietZone ?? 2;
         rs.finderFullSeparator = !!style.finderFullSeparator;
+        rs.simpleDarkColor = style.simpleDarkColor || '#000000';
+        rs.simpleLightColor = style.simpleLightColor || '#ffffff';
 
         // Update module shape buttons
         document.querySelectorAll('.shape-btn:not(.finder-shape-btn)').forEach(btn => {
@@ -2392,6 +2602,10 @@ const App = {
         document.getElementById('finderMiddleColor').value = rs.finderMiddleColor;
         document.getElementById('finderCenterColor').value = rs.finderCenterColor;
         document.getElementById('finderFullSeparator').checked = rs.finderFullSeparator;
+
+        // Simple colors (no logo mode)
+        document.getElementById('simpleDarkColor').value = rs.simpleDarkColor;
+        document.getElementById('simpleLightColor').value = rs.simpleLightColor;
 
         // Background fill
         document.getElementById('backgroundFill').value = rs.backgroundFill;
@@ -2444,9 +2658,12 @@ const App = {
 
             this.renderPreview();
 
-            // (f) Deletions — store pending set
+            // (f) Deletions — store pending set and module edits
             if (data.deletedCodewords && data.deletedCodewords.length > 0) {
                 this.state.deleteState.deletedCodewords = new Set(data.deletedCodewords);
+            }
+            if (data.deletedModuleEdits && data.deletedModuleEdits.length > 0) {
+                this.state.deleteState.deletedModuleEdits = new Map(data.deletedModuleEdits);
             }
 
             // (g) Navigate to Step 1
@@ -2477,6 +2694,7 @@ const App = {
                 document.getElementById('logoCanvasHint').style.display = 'none';
                 document.getElementById('optimizeMaskSection').style.display = 'block';
                 document.getElementById('moduleColorMode').style.display = 'block';
+                document.getElementById('simpleColorMode').style.display = 'none';
                 document.getElementById('backgroundFillGroup').style.display = 'block';
 
                 // Logo scale slider
@@ -2497,6 +2715,10 @@ const App = {
             };
             img.src = data.logo.dataUrl;
         } else {
+            // No logo - use simple color mode
+            rs.colorMode = 'simple';
+            document.getElementById('simpleColorMode').style.display = 'block';
+            document.getElementById('moduleColorMode').style.display = 'none';
             finishRestore();
         }
     },
@@ -2536,6 +2758,7 @@ const App = {
 
             // Clear delete state since matrix changed
             this.state.deleteState.deletedCodewords = new Set();
+            this.state.deleteState.deletedModuleEdits = new Map();
             this.state.deleteState.codewordMap = null;
             this.state.deleteState.reverseMap = null;
             this.updatePaintControlsVisibility();

@@ -12,7 +12,7 @@ const QRRenderer = {
         logoScale: 100,
         moduleShape: 'cushion', // 'square', 'circle', 'rounded', 'diamond', 'cushion'
         moduleSize: 80, // percentage (20-100)
-        colorMode: 'palette', // 'default', 'palette', 'gradient'
+        colorMode: 'simple', // 'simple', 'default', 'palette', 'gradient'
         darkPalette: ['#000000', '#333333', '#1a1a1a', '#0d0d0d'],
         lightPalette: ['#ffffff', '#f0f0f0', '#e0e0e0', '#d0d0d0'],
         darkMaxLuminosity: 33,
@@ -23,7 +23,10 @@ const QRRenderer = {
         finderMiddleColor: '#ffffff',
         finderCenterColor: '#000000',
         backgroundFill: 'light', // 'light', 'dark'
-        finderFullSeparator: false
+        finderFullSeparator: false,
+        // Simple 2-color mode (no logo)
+        simpleDarkColor: '#000000',
+        simpleLightColor: '#ffffff'
     },
 
     /**
@@ -187,6 +190,11 @@ const QRRenderer = {
             return isDark ? '#000000' : '#ffffff';
         }
 
+        // Simple 2-color mode when no logo is loaded
+        if (this.state.colorMode === 'simple') {
+            return isDark ? this.state.simpleDarkColor : this.state.simpleLightColor;
+        }
+
         let sampledRgba = this.sampleLogo(canvasX, canvasY, qrAreaSize);
 
         if (!sampledRgba || sampledRgba[3] < 128) {
@@ -296,7 +304,16 @@ const QRRenderer = {
             ctx.closePath();
             ctx.fill();
         } else {
-            ctx.fillRect(x + offsetX, y + offsetY, shrunkWidth, shrunkHeight);
+            // Square: use integer coords at 100% to avoid sub-pixel anti-aliasing
+            if (sizeFraction >= 1.0) {
+                const ix = Math.round(x);
+                const iy = Math.round(y);
+                const iw = Math.round(x + width) - ix;
+                const ih = Math.round(y + height) - iy;
+                ctx.fillRect(ix, iy, iw, ih);
+            } else {
+                ctx.fillRect(x + offsetX, y + offsetY, shrunkWidth, shrunkHeight);
+            }
         }
     },
 
@@ -761,7 +778,19 @@ const QRRenderer = {
                 if (deleteState.reverseMap) {
                     const cwIdx = deleteState.reverseMap.get(cellKey);
                     if (cwIdx !== undefined && deleteState.deletedCodewords.has(cwIdx)) {
-                        continue; // Skip deleted modules
+                        // Check if this deleted module has been painted
+                        if (deleteState.deletedModuleEdits && deleteState.deletedModuleEdits.has(cellKey)) {
+                            const paintedDark = deleteState.deletedModuleEdits.get(cellKey);
+                            const moduleX = offset + (col * moduleSize);
+                            const moduleY = offset + (row * moduleSize);
+                            // Use simple dark/light colors for painted deleted modules
+                            const color = paintedDark ?
+                                (this.state.simpleDarkColor || '#000000') :
+                                (this.state.simpleLightColor || '#ffffff');
+                            this.drawModule(ctx, moduleX, moduleY, moduleSize, moduleSize, color, this.state.moduleShape, sizeFraction);
+                        }
+                        // If not painted, skip (leave transparent/background)
+                        continue;
                     }
                 }
 
