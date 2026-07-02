@@ -674,6 +674,11 @@ function updateQRFromPaddingEdits() {
         // Step 7: Refresh Encode tab displays
         refreshEncodeTabDisplays();
 
+        // Step 8: Push the regenerated matrix into downstream tabs
+        if (typeof syncQrMatrixToOtherTabs === 'function') {
+            syncQrMatrixToOtherTabs();
+        }
+
     } catch (error) {
         alert('Error updating QR code: ' + error.message);
     }
@@ -930,8 +935,24 @@ function resetPaddingEdits() {
 
     if (confirm('Clear all padding edits and restore original values?')) {
         paddingEdits.clear();
+        if (originalPaddingBytes) {
+            updatePaddingBytes([...originalPaddingBytes]);
+            const blocks = splitIntoBlocks(
+                encodedBitstream.dataBytes,
+                currentVersion,
+                currentEccLevel,
+                blockSizeTable
+            );
+            calculateEccForBlocks(blocks);
+            encodedBitstream.blocks = blocks;
+            regenerateQRMatrix();
+            renderQrCode(currentMatrix);
+            refreshEncodeTabDisplays();
+            if (typeof syncQrMatrixToOtherTabs === 'function') {
+                syncQrMatrixToOtherTabs();
+            }
+        }
         renderPaddingGrid();
-        updateQRFromPaddingEdits();
     }
 }
 

@@ -87,6 +87,7 @@ function resetToOriginalMatrix() {
     qrBlocks = [];
     currentEcStep = 0;
     syndromeCalculated = false;
+    errorCodewordOutlines = [];
 
     // Reset buttons - Tab 2/3
     const unmaskButton = document.getElementById('unmaskButton');
@@ -301,8 +302,61 @@ function switchTab(tabIndex) {
         if (moduleMatrix) {
             drawCleanQR();
         }
+    } else if (tabIndex === 3) {
+        drawErrorCorrectionQR();
     }
     // Tab 4: No canvas redraw needed
+}
+
+function readCornersFromInputs() {
+    const corners = {};
+
+    Object.keys(cornerInputs).forEach(key => {
+        corners[key] = {
+            x: Math.round(parseFloat(cornerInputs[key].x.value) || 0),
+            y: Math.round(parseFloat(cornerInputs[key].y.value) || 0)
+        };
+    });
+
+    return corners;
+}
+
+function writeCornersToInputs(corners) {
+    Object.keys(cornerInputs).forEach(key => {
+        if (!corners || !corners[key]) return;
+        cornerInputs[key].x.value = Math.round(corners[key].x);
+        cornerInputs[key].y.value = Math.round(corners[key].y);
+    });
+}
+
+function setCornersFromBorders(top, bottom, left, right) {
+    if (!currentImage) return;
+
+    const x1 = left;
+    const y1 = top;
+    const x2 = currentImage.width - right;
+    const y2 = currentImage.height - bottom;
+
+    qrCorners = {
+        topLeft: { x: x1, y: y1 },
+        topRight: { x: x2, y: y1 },
+        bottomRight: { x: x2, y: y2 },
+        bottomLeft: { x: x1, y: y2 }
+    };
+
+    writeCornersToInputs(qrCorners);
+}
+
+function onCornerInputChange() {
+    qrCorners = readCornersFromInputs();
+    writeCornersToInputs(qrCorners);
+    drawImageWithGrid();
+}
+
+function advanceCornerSelection(currentCorner) {
+    const order = ['topLeft', 'topRight', 'bottomRight', 'bottomLeft'];
+    const nextIndex = (order.indexOf(currentCorner) + 1) % order.length;
+    cornerSelect.value = order[nextIndex];
 }
 
 // Toggle marking components
@@ -410,66 +464,150 @@ function drawCleanQR() {
     // Draw to both canvases (Tab 2 and Tab 3)
     drawToCanvas(cleanCanvas, cleanCtx);
     drawToCanvas(cleanCanvas3, cleanCtx3);
+    drawErrorCorrectionQR();
+}
+
+function getCodewordOutlineBounds(positions) {
+    if (!positions || !positions.length) return null;
+
+    const rows = positions.map(pos => pos.row);
+    const cols = positions.map(pos => pos.col);
+
+    return {
+        minRow: Math.min(...rows),
+        maxRow: Math.max(...rows),
+        minCol: Math.min(...cols),
+        maxCol: Math.max(...cols)
+    };
+}
+
+function updateErrorCodewordOutlines() {
+    errorCodewordOutlines = [];
+
+    if (!qrBlocks || !qrBlocks.length) return;
+
+    qrBlocks.forEach((block, blockIdx) => {
+        if (!block.errorPositions || !block.errorPositions.length) return;
+
+        block.errorPositions.forEach(pos => {
+            const positions = pos < block.dataBytes.length
+                ? block.dataModulePositions && block.dataModulePositions[pos]
+                : block.eccModulePositions && block.eccModulePositions[pos - block.dataBytes.length];
+            const bounds = getCodewordOutlineBounds(positions);
+            if (!bounds) return;
+
+            errorCodewordOutlines.push({
+                ...bounds,
+                blockIdx,
+                codewordLabel: pos < block.dataBytes.length ? `D${pos}` : `E${pos - block.dataBytes.length}`
+            });
+        });
+    });
+}
+
+function drawErrorCorrectionQR() {
+    if (!errorCanvas || !errorCtx || !moduleMatrix) return;
+
+    const moduleCount = moduleMatrix.length;
+    const quietZone = 4;
+    const modulePixelSize = 10;
+    const totalModules = moduleCount + (quietZone * 2);
+    const canvasSize = totalModules * modulePixelSize;
+
+    errorCanvas.width = canvasSize;
+    errorCanvas.height = canvasSize;
+
+    errorCtx.fillStyle = 'white';
+    errorCtx.fillRect(0, 0, canvasSize, canvasSize);
+
+    for (let row = 0; row < moduleCount; row++) {
+        for (let col = 0; col < moduleCount; col++) {
+            errorCtx.fillStyle = moduleMatrix[row][col] ? 'black' : 'white';
+            errorCtx.fillRect(
+                (quietZone + col) * modulePixelSize,
+                (quietZone + row) * modulePixelSize,
+                modulePixelSize,
+                modulePixelSize
+            );
+        }
+    }
+
+    if (!errorCodewordOutlines || !errorCodewordOutlines.length) return;
+
+    errorCtx.save();
+    errorCtx.fillStyle = 'rgba(255, 0, 0, 0.28)';
+
+    errorCodewordOutlines.forEach(bounds => {
+        const x = (quietZone + bounds.minCol) * modulePixelSize;
+        const y = (quietZone + bounds.minRow) * modulePixelSize;
+        const w = (bounds.maxCol - bounds.minCol + 1) * modulePixelSize;
+        const h = (bounds.maxRow - bounds.minRow + 1) * modulePixelSize;
+        errorCtx.fillRect(x, y, w, h);
+    });
+
+    errorCtx.restore();
 }
 
 // Draw the image and grid
 function drawImageWithGrid() {
     if (!currentImage || !imageData) return;
 
-    const top = parseInt(borderTop.value) || 0;
-    const bottom = parseInt(borderBottom.value) || 0;
-    const left = parseInt(borderLeft.value) || 0;
-    const right = parseInt(borderRight.value) || 0;
-
     const version = parseInt(versionSelect.value);
     const moduleCount = getModuleCount(version);
-
-    // Calculate module size
-    const moduleSize = calculateModuleSize(imageData, top, left);
+    qrCorners = readCornersFromInputs();
+    gridHomography = getGridHomography(qrCorners);
 
     // Update info display
-    document.getElementById('moduleSize').textContent = moduleSize.toFixed(2);
+    document.getElementById('moduleSize').textContent = getApproxModuleSize(qrCorners, moduleCount);
     document.getElementById('versionInfo').textContent = `${moduleCount}x${moduleCount}`;
     document.getElementById('versionLabel').textContent = `Version ${version}:`;
 
     // Set canvas size to match image
     canvas.width = currentImage.width;
     canvas.height = currentImage.height;
+    setDecoderCanvasDisplaySize();
 
     // Draw the image
     ctx.drawImage(currentImage, 0, 0);
+
+    if (!gridHomography) return;
 
     // Draw grid
     ctx.strokeStyle = 'rgba(255, 0, 0, 0.5)';
     ctx.lineWidth = 1;
 
-    const startX = left;
-    const startY = top;
-    const gridWidth = canvas.width - left - right;
-    const gridHeight = canvas.height - top - bottom;
-
     // Draw vertical lines
     for (let i = 0; i <= moduleCount; i++) {
-        const x = startX + (i * gridWidth / moduleCount);
+        const p1 = applyHomography(gridHomography, i / moduleCount, 0);
+        const p2 = applyHomography(gridHomography, i / moduleCount, 1);
         ctx.beginPath();
-        ctx.moveTo(x, startY);
-        ctx.lineTo(x, startY + gridHeight);
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
         ctx.stroke();
     }
 
     // Draw horizontal lines
     for (let i = 0; i <= moduleCount; i++) {
-        const y = startY + (i * gridHeight / moduleCount);
+        const p1 = applyHomography(gridHomography, 0, i / moduleCount);
+        const p2 = applyHomography(gridHomography, 1, i / moduleCount);
         ctx.beginPath();
-        ctx.moveTo(startX, y);
-        ctx.lineTo(startX + gridWidth, y);
+        ctx.moveTo(p1.x, p1.y);
+        ctx.lineTo(p2.x, p2.y);
         ctx.stroke();
     }
 
     // Draw border outline
     ctx.strokeStyle = 'rgba(0, 255, 0, 0.7)';
     ctx.lineWidth = 2;
-    ctx.strokeRect(left, top, gridWidth, gridHeight);
+    ctx.beginPath();
+    ctx.moveTo(qrCorners.topLeft.x, qrCorners.topLeft.y);
+    ctx.lineTo(qrCorners.topRight.x, qrCorners.topRight.y);
+    ctx.lineTo(qrCorners.bottomRight.x, qrCorners.bottomRight.y);
+    ctx.lineTo(qrCorners.bottomLeft.x, qrCorners.bottomLeft.y);
+    ctx.closePath();
+    ctx.stroke();
+
+    drawCornerHandles(qrCorners);
 
     // Sample modules and draw clean QR
     moduleMatrix = sampleModules();
@@ -555,6 +693,57 @@ function drawImageWithGrid() {
         markedComponents.version = false;
         markVersionButton.classList.remove('active');
     }
+}
+
+function setDecoderCanvasDisplaySize() {
+    const minDisplaySize = 520;
+    const shortestSide = Math.min(currentImage.width, currentImage.height);
+    const scale = shortestSide > 0 ? Math.max(1, minDisplaySize / shortestSide) : 1;
+
+    canvas.style.width = `${Math.round(currentImage.width * scale)}px`;
+    canvas.style.height = `${Math.round(currentImage.height * scale)}px`;
+}
+
+function getApproxModuleSize(corners, moduleCount) {
+    if (!corners || !corners.topLeft || !corners.topRight || !corners.bottomLeft) {
+        return '-';
+    }
+
+    const topWidth = Math.hypot(corners.topRight.x - corners.topLeft.x, corners.topRight.y - corners.topLeft.y);
+    const leftHeight = Math.hypot(corners.bottomLeft.x - corners.topLeft.x, corners.bottomLeft.y - corners.topLeft.y);
+    const moduleSize = ((topWidth + leftHeight) / 2) / moduleCount;
+    return Number.isFinite(moduleSize) ? moduleSize.toFixed(2) : '-';
+}
+
+function drawCornerHandles(corners) {
+    const labels = [
+        ['topLeft', 'TL'],
+        ['topRight', 'TR'],
+        ['bottomRight', 'BR'],
+        ['bottomLeft', 'BL']
+    ];
+
+    const rect = canvas.getBoundingClientRect();
+    const displayScale = rect.width ? Math.max(canvas.width / rect.width, canvas.height / rect.height, 1) : 1;
+    const handleRadius = Math.max(6, 7 * displayScale);
+    const labelOffset = Math.max(8, 10 * displayScale);
+    const labelSize = Math.max(13, 13 * displayScale);
+
+    ctx.font = `bold ${labelSize}px Arial`;
+    ctx.textBaseline = 'middle';
+    labels.forEach(([key, label]) => {
+        const point = corners[key];
+        const isSelected = cornerSelect && cornerSelect.value === key;
+        ctx.fillStyle = isSelected ? '#ff8c00' : '#4a9eff';
+        ctx.beginPath();
+        ctx.arc(point.x, point.y, isSelected ? handleRadius * 1.15 : handleRadius, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.fillStyle = 'white';
+        ctx.strokeStyle = '#1a3a6b';
+        ctx.lineWidth = Math.max(3, 3 * displayScale);
+        ctx.strokeText(label, point.x + labelOffset, point.y);
+        ctx.fillText(label, point.x + labelOffset, point.y);
+    });
 }
 
 // Add a codeword to the visual display
@@ -764,6 +953,8 @@ function resetDecoderState() {
     moduleMatrix = null;
     originalMatrix = null;
     usedModules = null;
+    qrCorners = null;
+    gridHomography = null;
     isUnmasked = false;
     isModeDecoded = false;
     isSizeDecoded = false;
@@ -783,6 +974,7 @@ function resetDecoderState() {
     qrBlocks = [];
     currentEcStep = 0;
     syndromeCalculated = false;
+    errorCodewordOutlines = [];
 
     // Clear canvases
     const ctx = canvas.getContext('2d');
@@ -791,6 +983,9 @@ function resetDecoderState() {
     cleanCtx.clearRect(0, 0, cleanCanvas.width, cleanCanvas.height);
     const cleanCtx3 = cleanCanvas3.getContext('2d');
     cleanCtx3.clearRect(0, 0, cleanCanvas3.width, cleanCanvas3.height);
+    if (errorCtx && errorCanvas) {
+        errorCtx.clearRect(0, 0, errorCanvas.width, errorCanvas.height);
+    }
 
     // Reset button states - Tab 1
     // (All Tab 1 buttons are always enabled)
@@ -823,6 +1018,11 @@ function resetDecoderState() {
     // Clear format information
     document.getElementById('versionInfo').textContent = '-';
     document.getElementById('versionInfo2').textContent = '-';
+    Object.values(cornerInputs).forEach(pair => {
+        pair.x.value = 0;
+        pair.y.value = 0;
+    });
+    if (cornerSelect) cornerSelect.value = 'topLeft';
     // Reset dropdowns
     updateEccDropdowns('');
     updateMaskDropdowns(-1);

@@ -265,6 +265,8 @@ function findErrorLocations() {
     }
 
     currentEcStep = 2;
+    updateErrorCodewordOutlines();
+    drawErrorCorrectionQR();
 
     // Disable Find Error Locations, enable Calculate Error Values
     document.getElementById('findErrorLocationsButton').disabled = true;
@@ -348,6 +350,8 @@ function calculateErrorValues() {
     }
 
     currentEcStep = 3;
+    updateErrorCodewordOutlines();
+    drawErrorCorrectionQR();
 
     // Disable Calculate Error Values, enable Apply Corrections
     document.getElementById('calculateErrorValuesButton').disabled = true;
@@ -432,6 +436,8 @@ function applyCorrections() {
 
     // Re-enable Decode Mode with corrected data
     updateDeinterleavedBitsFromCorrectedBlocks();
+    updateErrorCodewordOutlines();
+    drawErrorCorrectionQR();
 }
 
 // Decode numeric mode message

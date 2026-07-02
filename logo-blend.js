@@ -274,9 +274,20 @@ function extractDominantColors(img) {
 // ========== LOGO BLEND STATE ==========
 
 let logoBlendState = {
+    originalLogoImage: null,
+    originalLogoImg: null,
+    originalLogoImageData: null,
     logoImage: null,
     logoImg: null, // HTMLImageElement
     logoImageData: null,
+    prep: {
+        backgroundMode: 'none', // 'none', 'white', or 'black'
+        tolerance: 32,
+        fillHoles: true,
+        outlineEnabled: true,
+        outlineColor: '#ffffff',
+        outlineWidth: 4
+    },
     colorMode: 'palette', // 'palette' or 'gradient'
     darkPalette: ['#000000', '#333333', '#1a1a1a', '#0d0d0d'],
     lightPalette: ['#ffffff', '#f0f0f0', '#e0e0e0', '#d0d0d0'],
@@ -319,6 +330,238 @@ function showLogoBlendStatus(message, type = 'info') {
 }
 
 // ========== LOGO BLEND FUNCTIONS ==========
+
+function hexToRgb(hex) {
+    const clean = hex.replace('#', '');
+    return {
+        r: parseInt(clean.slice(0, 2), 16),
+        g: parseInt(clean.slice(2, 4), 16),
+        b: parseInt(clean.slice(4, 6), 16)
+    };
+}
+
+function cloneImageData(imageData) {
+    return new ImageData(new Uint8ClampedArray(imageData.data), imageData.width, imageData.height);
+}
+
+function imageDataToImage(imageData, callback) {
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    canvas.width = imageData.width;
+    canvas.height = imageData.height;
+    ctx.putImageData(imageData, 0, 0);
+
+    const img = new Image();
+    img.onload = () => callback(img, canvas.toDataURL('image/png'), imageData);
+    img.src = canvas.toDataURL('image/png');
+}
+
+function resetLogoPrepControls() {
+    const prep = logoBlendState.prep;
+
+    const background = document.getElementById('logoPrepBackground');
+    if (background) background.value = prep.backgroundMode;
+
+    const tolerance = document.getElementById('logoPrepTolerance');
+    if (tolerance) tolerance.value = prep.tolerance;
+    const toleranceLabel = document.getElementById('logoPrepToleranceLabel');
+    if (toleranceLabel) toleranceLabel.textContent = prep.tolerance;
+
+    const fillHoles = document.getElementById('logoPrepFillHoles');
+    if (fillHoles) fillHoles.checked = prep.fillHoles;
+
+    const outlineEnabled = document.getElementById('logoPrepOutlineEnabled');
+    if (outlineEnabled) outlineEnabled.checked = prep.outlineEnabled;
+
+    const outlineColor = document.getElementById('logoPrepOutlineColor');
+    if (outlineColor) outlineColor.value = prep.outlineColor;
+
+    const outlineWidth = document.getElementById('logoPrepOutlineWidth');
+    if (outlineWidth) outlineWidth.value = prep.outlineWidth;
+    const outlineWidthLabel = document.getElementById('logoPrepOutlineWidthLabel');
+    if (outlineWidthLabel) outlineWidthLabel.textContent = prep.outlineWidth;
+}
+
+function buildOutsideTransparentMask(opaque, width, height) {
+    const outside = new Uint8Array(width * height);
+    const queue = [];
+
+    const enqueue = (x, y) => {
+        if (x < 0 || y < 0 || x >= width || y >= height) return;
+        const index = y * width + x;
+        if (opaque[index] || outside[index]) return;
+        outside[index] = 1;
+        queue.push(index);
+    };
+
+    for (let x = 0; x < width; x++) {
+        enqueue(x, 0);
+        enqueue(x, height - 1);
+    }
+    for (let y = 1; y < height - 1; y++) {
+        enqueue(0, y);
+        enqueue(width - 1, y);
+    }
+
+    for (let i = 0; i < queue.length; i++) {
+        const index = queue[i];
+        const x = index % width;
+        const y = Math.floor(index / width);
+        enqueue(x + 1, y);
+        enqueue(x - 1, y);
+        enqueue(x, y + 1);
+        enqueue(x, y - 1);
+    }
+
+    return outside;
+}
+
+function prepareLogoImageData(sourceImageData) {
+    const prep = logoBlendState.prep;
+    const sourceWidth = sourceImageData.width;
+    const sourceHeight = sourceImageData.height;
+    const outlineWidth = prep.outlineEnabled ? Math.max(0, parseInt(prep.outlineWidth) || 0) : 0;
+    const border = outlineWidth;
+    const width = sourceWidth + border * 2;
+    const height = sourceHeight + border * 2;
+    const data = new Uint8ClampedArray(width * height * 4);
+
+    for (let y = 0; y < sourceHeight; y++) {
+        for (let x = 0; x < sourceWidth; x++) {
+            const sourceIndex = (y * sourceWidth + x) * 4;
+            const targetIndex = ((y + border) * width + (x + border)) * 4;
+            data[targetIndex] = sourceImageData.data[sourceIndex];
+            data[targetIndex + 1] = sourceImageData.data[sourceIndex + 1];
+            data[targetIndex + 2] = sourceImageData.data[sourceIndex + 2];
+            data[targetIndex + 3] = sourceImageData.data[sourceIndex + 3];
+        }
+    }
+
+    const backgroundRgb = prep.backgroundMode === 'white'
+        ? { r: 255, g: 255, b: 255 }
+        : prep.backgroundMode === 'black'
+            ? { r: 0, g: 0, b: 0 }
+            : null;
+
+    if (backgroundRgb) {
+        const tolerance = Math.max(0, parseInt(prep.tolerance) || 0);
+        const feather = 32;
+        for (let i = 0; i < data.length; i += 4) {
+            if (data[i + 3] === 0) continue;
+            const distance = colorDistance(
+                [data[i], data[i + 1], data[i + 2]],
+                [backgroundRgb.r, backgroundRgb.g, backgroundRgb.b]
+            );
+            if (distance <= tolerance) {
+                data[i + 3] = 0;
+            } else if (distance <= tolerance + feather) {
+                const alphaScale = (distance - tolerance) / feather;
+                data[i + 3] = Math.round(data[i + 3] * alphaScale);
+            }
+        }
+    }
+
+    const outlineRgb = hexToRgb(prep.outlineColor || '#ffffff');
+    const opaque = new Uint8Array(width * height);
+    for (let index = 0; index < width * height; index++) {
+        opaque[index] = data[index * 4 + 3] >= 128 ? 1 : 0;
+    }
+
+    if (prep.fillHoles) {
+        const outside = buildOutsideTransparentMask(opaque, width, height);
+        for (let index = 0; index < width * height; index++) {
+            if (!opaque[index] && !outside[index]) {
+                const dataIndex = index * 4;
+                data[dataIndex] = outlineRgb.r;
+                data[dataIndex + 1] = outlineRgb.g;
+                data[dataIndex + 2] = outlineRgb.b;
+                data[dataIndex + 3] = 255;
+                opaque[index] = 1;
+            }
+        }
+    }
+
+    const output = new Uint8ClampedArray(data);
+    if (outlineWidth > 0) {
+        const radiusSq = outlineWidth * outlineWidth;
+        for (let y = 0; y < height; y++) {
+            for (let x = 0; x < width; x++) {
+                const index = y * width + x;
+                if (opaque[index]) continue;
+
+                let nearLogo = false;
+                for (let dy = -outlineWidth; dy <= outlineWidth && !nearLogo; dy++) {
+                    const yy = y + dy;
+                    if (yy < 0 || yy >= height) continue;
+                    for (let dx = -outlineWidth; dx <= outlineWidth; dx++) {
+                        if (dx * dx + dy * dy > radiusSq) continue;
+                        const xx = x + dx;
+                        if (xx < 0 || xx >= width) continue;
+                        if (opaque[yy * width + xx]) {
+                            nearLogo = true;
+                            break;
+                        }
+                    }
+                }
+
+                if (nearLogo) {
+                    const dataIndex = index * 4;
+                    output[dataIndex] = outlineRgb.r;
+                    output[dataIndex + 1] = outlineRgb.g;
+                    output[dataIndex + 2] = outlineRgb.b;
+                    output[dataIndex + 3] = 255;
+                }
+            }
+        }
+    }
+
+    return new ImageData(output, width, height);
+}
+
+function applyLogoPrep(callback) {
+    if (!logoBlendState.originalLogoImageData) {
+        if (callback) callback();
+        return;
+    }
+
+    const preparedImageData = prepareLogoImageData(cloneImageData(logoBlendState.originalLogoImageData));
+    imageDataToImage(preparedImageData, (img, dataUrl, imageData) => {
+        logoBlendState.logoImage = dataUrl;
+        logoBlendState.logoImg = img;
+        logoBlendState.logoImageData = imageData;
+
+        const colors = extractDominantColors(img);
+        logoBlendState.darkPalette = colors.darkPalette;
+        logoBlendState.lightPalette = colors.lightPalette;
+
+        if (callback) callback();
+    });
+}
+
+function resetLogoPrep() {
+    logoBlendState.prep = {
+        backgroundMode: 'none',
+        tolerance: 32,
+        fillHoles: true,
+        outlineEnabled: true,
+        outlineColor: '#ffffff',
+        outlineWidth: 4
+    };
+    resetLogoPrepControls();
+    applyLogoPrep(() => {
+        const previewImg = document.getElementById('logoBlendPreviewImg');
+        if (previewImg) previewImg.src = logoBlendState.logoImage;
+        if (logoBlendState.colorMode === 'palette' && typeof displayExtractedPalette === 'function') {
+            displayExtractedPalette();
+        }
+        if (typeof renderPaddingGrid === 'function') {
+            renderPaddingGrid();
+        }
+        if (typeof syncLogoToOtherTabs === 'function') {
+            syncLogoToOtherTabs();
+        }
+    });
+}
 
 /**
  * Load logo image and extract colors
@@ -374,8 +617,8 @@ function loadLogoForBlending(file, callback) {
     reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-            logoBlendState.logoImage = e.target.result;
-            logoBlendState.logoImg = img;
+            logoBlendState.originalLogoImage = e.target.result;
+            logoBlendState.originalLogoImg = img;
 
             // Create ImageData for sampling
             const tempCanvas = document.createElement('canvas');
@@ -383,24 +626,31 @@ function loadLogoForBlending(file, callback) {
             tempCanvas.width = img.width;
             tempCanvas.height = img.height;
             tempCtx.drawImage(img, 0, 0);
-            logoBlendState.logoImageData = tempCtx.getImageData(0, 0, img.width, img.height);
+            logoBlendState.originalLogoImageData = tempCtx.getImageData(0, 0, img.width, img.height);
 
-            // Extract colors for palette mode
-            const colors = extractDominantColors(img);
-            logoBlendState.darkPalette = colors.darkPalette;
-            logoBlendState.lightPalette = colors.lightPalette;
+            logoBlendState.prep = {
+                backgroundMode: 'none',
+                tolerance: 32,
+                fillHoles: true,
+                outlineEnabled: true,
+                outlineColor: '#ffffff',
+                outlineWidth: 4
+            };
+            resetLogoPrepControls();
 
-            // Auto-detect best background fill setting
-            const detectedFill = autoDetectBackgroundFill(logoBlendState.logoImageData);
-            logoBlendState.transparentTreatment = detectedFill;
+            applyLogoPrep(() => {
+                // Auto-detect best background fill setting from the prepared logo
+                const detectedFill = autoDetectBackgroundFill(logoBlendState.logoImageData);
+                logoBlendState.transparentTreatment = detectedFill;
 
-            // Update the dropdown to reflect the auto-detected value
-            const dropdown = document.getElementById('logoBlendTransparentTreatment');
-            if (dropdown) {
-                dropdown.value = detectedFill;
-            }
+                // Update the dropdown to reflect the auto-detected value
+                const dropdown = document.getElementById('logoBlendTransparentTreatment');
+                if (dropdown) {
+                    dropdown.value = detectedFill;
+                }
 
-            if (callback) callback();
+                if (callback) callback();
+            });
         };
         img.src = e.target.result;
     };
@@ -785,7 +1035,8 @@ function findBestMaskForLogo() {
         bestPaddingBytes: bestResult.paddingBytes,
         bestPaddingEdits: bestResult.paddingEdits,
         total: desiredColors.size,
-        scores: scores
+        scores: scores,
+        desiredColors
     };
 }
 
@@ -821,6 +1072,88 @@ function displayMaskScores(result, selectedMask) {
     scoresHtml += '</div></div>';
 
     return scoresHtml;
+}
+
+function applyAdvancedLogoBlendWithEcc(desiredColors, selectedMask) {
+    if (typeof buildGJMaps !== 'function' || typeof gjSolveModuleBits !== 'function') {
+        return null;
+    }
+    if (!encodedBitstream || !encodedBitstream.dataBytes || !paddingModuleMap || !editableCells) {
+        return null;
+    }
+
+    const version = currentVersion;
+    const eccLevel = currentEccLevel;
+    const size = currentMatrix.length;
+    const maps = buildGJMaps(version, eccLevel, encodedBitstream.dataBytes.length);
+
+    const paddingTargets = new Map();
+    const eccTargets = new Map();
+
+    desiredColors.forEach((isDark, cellKey) => {
+        if (editableCells.has(cellKey)) {
+            paddingTargets.set(cellKey, isDark);
+        } else if (maps.eccModuleMap.has(cellKey)) {
+            eccTargets.set(cellKey, isDark);
+        }
+    });
+
+    if (eccTargets.size === 0) {
+        return null;
+    }
+
+    const messageBits = encodedBitstream.modeIndicator.length +
+                       encodedBitstream.charCount.length +
+                       encodedBitstream.messageData.length +
+                       encodedBitstream.terminator.length +
+                       encodedBitstream.bytePadding.length;
+    const messageByteCount = Math.ceil(messageBits / 8);
+
+    const solvedDataBytes = gjSolveModuleBits({
+        dataBytes: [...encodedBitstream.dataBytes],
+        version,
+        eccLevel,
+        maskPattern: selectedMask,
+        messageByteCount,
+        targets: paddingTargets,
+        moduleToInterleavedBit: maps.moduleToInterleavedBit,
+        interleavedBitToBlock: maps.interleavedBitToBlock,
+        eccTargets,
+        eccModuleMap: maps.eccModuleMap
+    });
+
+    const blocks = splitIntoBlocks(solvedDataBytes, version, eccLevel, blockSizeTable);
+    calculateEccForBlocks(blocks);
+
+    const interleaved = interleaveBlocks(blocks);
+    const matrix = createMatrix(size);
+    placeFunctionPatterns(matrix, version);
+    placeDataBits(matrix, interleaved);
+    applyMask(matrix, selectedMask, version);
+    placeFormatInfo(matrix, eccLevel, selectedMask, version);
+    if (version >= 7) {
+        placeVersionInfo(matrix, version);
+    }
+
+    const paddingByteCount = encodedBitstream.padBytes.length;
+    const solvedPaddingBytes = solvedDataBytes.slice(messageByteCount, messageByteCount + paddingByteCount);
+
+    let matches = 0;
+    desiredColors.forEach((wantsDark, cellKey) => {
+        const [row, col] = cellKey.split(',').map(Number);
+        if (Boolean(matrix[row][col]) === wantsDark) matches++;
+    });
+
+    return {
+        matrix,
+        blocks,
+        dataBytes: solvedDataBytes,
+        paddingBytes: solvedPaddingBytes,
+        matches,
+        total: desiredColors.size,
+        paddingTargets: paddingTargets.size,
+        eccTargets: eccTargets.size
+    };
 }
 
 /**
@@ -872,41 +1205,64 @@ function applyLogoBlendToPadding() {
         paddingEdits.set(key, value);
     });
 
-    // Update the padding bytes in encodedBitstream
-    const messageBits = encodedBitstream.modeIndicator.length +
-                       encodedBitstream.charCount.length +
-                       encodedBitstream.messageData.length +
-                       encodedBitstream.terminator.length +
-                       encodedBitstream.bytePadding.length;
-    const messageBytes = Math.ceil(messageBits / 8);
+    const advancedResult = applyAdvancedLogoBlendWithEcc(maskResult.desiredColors, selectedMask);
 
-    maskResult.bestPaddingBytes.forEach((byte, idx) => {
-        encodedBitstream.dataBytes[messageBytes + idx] = byte;
-    });
-    encodedBitstream.padBytes = [...maskResult.bestPaddingBytes];
+    if (advancedResult) {
+        encodedBitstream.dataBytes = [...advancedResult.dataBytes];
+        encodedBitstream.padBytes = [...advancedResult.paddingBytes];
+        encodedBitstream.blocks = advancedResult.blocks;
+        currentMatrix = advancedResult.matrix;
 
-    // Recalculate ECC with the new padding
-    const blocks = splitIntoBlocks(encodedBitstream.dataBytes, currentVersion, currentEccLevel, blockSizeTable);
-    calculateEccForBlocks(blocks);
-    encodedBitstream.blocks = blocks;
+        // Reflect the final regenerated matrix in the editable padding overlay.
+        paddingEdits.clear();
+        editableCells.forEach(cellKey => {
+            const [row, col] = cellKey.split(',').map(Number);
+            paddingEdits.set(cellKey, Boolean(currentMatrix[row][col]));
+        });
+    } else {
+        // Update the padding bytes in encodedBitstream
+        const messageBits = encodedBitstream.modeIndicator.length +
+                           encodedBitstream.charCount.length +
+                           encodedBitstream.messageData.length +
+                           encodedBitstream.terminator.length +
+                           encodedBitstream.bytePadding.length;
+        const messageBytes = Math.ceil(messageBits / 8);
 
-    // Regenerate matrix with new data+ECC and the best mask
-    const interleaved = interleaveBlocks(blocks);
-    const size = 21 + (currentVersion - 1) * 4;
-    currentMatrix = createMatrix(size);
-    placeFunctionPatterns(currentMatrix, currentVersion);
-    placeDataBits(currentMatrix, interleaved);
-    applyMask(currentMatrix, selectedMask, currentVersion);
-    placeFormatInfo(currentMatrix, currentEccLevel, selectedMask, currentVersion);
-    if (currentVersion >= 7) {
-        placeVersionInfo(currentMatrix, currentVersion);
+        maskResult.bestPaddingBytes.forEach((byte, idx) => {
+            encodedBitstream.dataBytes[messageBytes + idx] = byte;
+        });
+        encodedBitstream.padBytes = [...maskResult.bestPaddingBytes];
+
+        // Recalculate ECC with the new padding
+        const blocks = splitIntoBlocks(encodedBitstream.dataBytes, currentVersion, currentEccLevel, blockSizeTable);
+        calculateEccForBlocks(blocks);
+        encodedBitstream.blocks = blocks;
+
+        // Regenerate matrix with new data+ECC and the best mask
+        const interleaved = interleaveBlocks(blocks);
+        const size = 21 + (currentVersion - 1) * 4;
+        currentMatrix = createMatrix(size);
+        placeFunctionPatterns(currentMatrix, currentVersion);
+        placeDataBits(currentMatrix, interleaved);
+        applyMask(currentMatrix, selectedMask, currentVersion);
+        placeFormatInfo(currentMatrix, currentEccLevel, selectedMask, currentVersion);
+        if (currentVersion >= 7) {
+            placeVersionInfo(currentMatrix, currentVersion);
+        }
+    }
+
+    if (typeof originalPaddingBytes !== 'undefined') {
+        originalPaddingBytes = [...encodedBitstream.padBytes];
     }
 
     // Update originalMatrix
     originalMatrix = currentMatrix.map(row => [...row]);
 
     // Build status message
-    const statusMessage = `✓ Applied logo blend using mask ${selectedMask} (${maskResult.bestMatches}/${maskResult.total} modules match logo).`;
+    const matchCount = advancedResult ? advancedResult.matches : maskResult.bestMatches;
+    const totalCount = advancedResult ? advancedResult.total : maskResult.total;
+    const eccText = advancedResult ? `, including ${advancedResult.eccTargets} ECC module targets` : '';
+    const statusMessage = `✓ Applied logo blend using mask ${selectedMask} (${matchCount}/${totalCount} modules match logo${eccText}).`;
 
     showLogoBlendStatus(statusMessage, 'success');
 
@@ -929,5 +1285,10 @@ function applyLogoBlendToPadding() {
     // Refresh encode tab displays
     if (typeof refreshEncodeTabDisplays === 'function') {
         refreshEncodeTabDisplays();
+    }
+
+    // Keep downstream tabs on the regenerated matrix, mask, and logo settings.
+    if (typeof syncLogoToOtherTabs === 'function') {
+        syncLogoToOtherTabs();
     }
 }

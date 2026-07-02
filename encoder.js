@@ -272,7 +272,12 @@ function onZeroPaddingClick() {
     placeVersionInfo(matrix, currentVersion);
 
     document.getElementById('qrCodeContainer').style.display = 'block';
+    currentMatrix = matrix;
+    originalMatrix = currentMatrix.map(row => [...row]);
     renderQrCode(matrix);
+    if (typeof syncQrMatrixToOtherTabs === 'function') {
+        syncQrMatrixToOtherTabs();
+    }
 }
 
 function onApplyCustomPaddingClick() {
@@ -359,7 +364,12 @@ function onApplyCustomPaddingClick() {
     placeVersionInfo(matrix, currentVersion);
 
     document.getElementById('qrCodeContainer').style.display = 'block';
+    currentMatrix = matrix;
+    originalMatrix = currentMatrix.map(row => [...row]);
     renderQrCode(matrix);
+    if (typeof syncQrMatrixToOtherTabs === 'function') {
+        syncQrMatrixToOtherTabs();
+    }
 }
 
 // Initialize on load

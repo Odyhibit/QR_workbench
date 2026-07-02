@@ -427,7 +427,9 @@ function deinterleaveData() {
     const blocks = Array.from({ length: totalBlocks }, (_, idx) => ({
         dataLen: dataLens[idx] || 0,
         data: [],
-        ec: []
+        ec: [],
+        dataPhysicalIndexes: [],
+        ecPhysicalIndexes: []
     }));
 
     let cursor = 0;
@@ -435,6 +437,7 @@ function deinterleaveData() {
     for (let i = 0; i < maxDataLen; i++) {
         for (let b = 0; b < blocks.length; b++) {
             if (blocks[b].dataLen > i && cursor < bytes.length) {
+                blocks[b].dataPhysicalIndexes.push(cursor);
                 blocks[b].data.push(bytes[cursor++]);
             }
         }
@@ -444,6 +447,7 @@ function deinterleaveData() {
     for (let i = 0; i < (config.ecPerBlock || 0); i++) {
         for (let b = 0; b < blocks.length; b++) {
             if (cursor < bytes.length) {
+                blocks[b].ecPhysicalIndexes.push(cursor);
                 blocks[b].ec.push(bytes[cursor++]);
             }
         }
@@ -520,6 +524,8 @@ function deinterleaveData() {
         dataBytes: block.data.map(bits => parseInt(bits, 2)),
         eccBytes: block.ec.map(bits => parseInt(bits, 2)),
         originalData: block.data.map(bits => parseInt(bits, 2)), // Keep original for comparison
+        dataModulePositions: block.dataPhysicalIndexes.map(getModulePositionsForRecoveredCodeword),
+        eccModulePositions: block.ecPhysicalIndexes.map(getModulePositionsForRecoveredCodeword),
         syndromes: [],
         errorPositions: [],
         errorValues: []
@@ -534,6 +540,8 @@ function deinterleaveData() {
     // Reset error correction state
     currentEcStep = 0;
     syndromeCalculated = false;
+    errorCodewordOutlines = [];
+    drawErrorCorrectionQR();
 
     // Enable Calculate Syndromes button
     const calculateSyndromesButton = document.getElementById('calculateSyndromesButton');
@@ -552,6 +560,13 @@ function deinterleaveData() {
     if (deinterleaveButton) {
         deinterleaveButton.disabled = true;
     }
+}
+
+function getModulePositionsForRecoveredCodeword(byteIndex) {
+    dataPositions = dataPositions.length ? dataPositions : buildDataPositions();
+    return dataPositions
+        .slice(byteIndex * 8, byteIndex * 8 + 8)
+        .map(pos => ({ row: pos.row, col: pos.col }));
 }
 
 // Decode the mode indicator (first 4 bits from bottom-right)
