@@ -286,7 +286,7 @@ let logoBlendState = {
         fillHoles: true,
         outlineEnabled: true,
         outlineColor: '#ffffff',
-        outlineWidth: 4
+        outlineWidth: 1
     },
     colorMode: 'palette', // 'palette' or 'gradient'
     darkPalette: ['#000000', '#333333', '#1a1a1a', '#0d0d0d'],
@@ -356,6 +356,34 @@ function imageDataToImage(imageData, callback) {
     img.src = canvas.toDataURL('image/png');
 }
 
+function getDefaultLogoOutlineWidth() {
+    const source = logoBlendState.originalLogoImageData || logoBlendState.logoImageData;
+    if (!source) return 1;
+
+    const sourceLongSide = Math.max(source.width, source.height);
+    const matrixSize = typeof currentMatrix !== 'undefined' && currentMatrix
+        ? currentMatrix.length
+        : 0;
+    const scale = Math.max(0.01, (logoBlendState.logoScale || 100) / 100);
+
+    if (!matrixSize) {
+        return Math.max(1, Math.round(sourceLongSide / 100));
+    }
+
+    return Math.max(1, Math.round(sourceLongSide / (matrixSize * scale)));
+}
+
+function createDefaultLogoPrep() {
+    return {
+        backgroundMode: 'none',
+        tolerance: 32,
+        fillHoles: true,
+        outlineEnabled: true,
+        outlineColor: '#ffffff',
+        outlineWidth: getDefaultLogoOutlineWidth()
+    };
+}
+
 function resetLogoPrepControls() {
     const prep = logoBlendState.prep;
 
@@ -377,7 +405,10 @@ function resetLogoPrepControls() {
     if (outlineColor) outlineColor.value = prep.outlineColor;
 
     const outlineWidth = document.getElementById('logoPrepOutlineWidth');
-    if (outlineWidth) outlineWidth.value = prep.outlineWidth;
+    if (outlineWidth) {
+        outlineWidth.max = Math.max(parseInt(outlineWidth.max) || 40, prep.outlineWidth * 4);
+        outlineWidth.value = prep.outlineWidth;
+    }
     const outlineWidthLabel = document.getElementById('logoPrepOutlineWidthLabel');
     if (outlineWidthLabel) outlineWidthLabel.textContent = prep.outlineWidth;
 }
@@ -539,14 +570,7 @@ function applyLogoPrep(callback) {
 }
 
 function resetLogoPrep() {
-    logoBlendState.prep = {
-        backgroundMode: 'none',
-        tolerance: 32,
-        fillHoles: true,
-        outlineEnabled: true,
-        outlineColor: '#ffffff',
-        outlineWidth: 4
-    };
+    logoBlendState.prep = createDefaultLogoPrep();
     resetLogoPrepControls();
     applyLogoPrep(() => {
         const previewImg = document.getElementById('logoBlendPreviewImg');
@@ -559,6 +583,9 @@ function resetLogoPrep() {
         }
         if (typeof syncLogoToOtherTabs === 'function') {
             syncLogoToOtherTabs();
+        }
+        if (typeof scheduleLogoBlendAutoApply === 'function') {
+            scheduleLogoBlendAutoApply();
         }
     });
 }
@@ -628,14 +655,7 @@ function loadLogoForBlending(file, callback) {
             tempCtx.drawImage(img, 0, 0);
             logoBlendState.originalLogoImageData = tempCtx.getImageData(0, 0, img.width, img.height);
 
-            logoBlendState.prep = {
-                backgroundMode: 'none',
-                tolerance: 32,
-                fillHoles: true,
-                outlineEnabled: true,
-                outlineColor: '#ffffff',
-                outlineWidth: 4
-            };
+            logoBlendState.prep = createDefaultLogoPrep();
             resetLogoPrepControls();
 
             applyLogoPrep(() => {

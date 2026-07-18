@@ -580,7 +580,7 @@
                     <input type="file" id="logoBlendUpload" accept="image/*" style="width: 100%; padding: 5px; font-size: 12px;">
                     <div style="font-size: 11px; color: #666; margin-top: 4px;">Upload an image to blend with padding modules</div>
                     <div id="logoBlendPreview" style="display: none; margin-top: 8px; text-align: center;">
-                        <img id="logoBlendPreviewImg" style="max-width: 100%; max-height: 150px; border: 1px solid #ddd; border-radius: 4px;">
+                        <img id="logoBlendPreviewImg" style="max-width: 100%; max-height: 150px; border: 1px solid #ddd; border-radius: 4px; background-color: #fff; background-image: linear-gradient(45deg, #d8d8d8 25%, transparent 25%), linear-gradient(-45deg, #d8d8d8 25%, transparent 25%), linear-gradient(45deg, transparent 75%, #d8d8d8 75%), linear-gradient(-45deg, transparent 75%, #d8d8d8 75%); background-size: 16px 16px; background-position: 0 0, 0 8px, 8px -8px, -8px 0;">
                     </div>
                 </div>
 
@@ -615,8 +615,8 @@
                         <input type="color" id="logoPrepOutlineColor" value="#ffffff" style="width: 100%; height: 32px;">
                     </div>
                     <div class="control-group">
-                        <label>Outline Width: <span id="logoPrepOutlineWidthLabel">4</span>px</label>
-                        <input type="range" id="logoPrepOutlineWidth" min="0" max="40" value="4" step="1" style="width: 100%;">
+                        <label>Outline Width: <span id="logoPrepOutlineWidthLabel">auto</span> px</label>
+                        <input type="range" id="logoPrepOutlineWidth" min="0" max="160" value="4" step="1" style="width: 100%;">
                     </div>
                     <button class="mark-button" type="button" onclick="resetLogoPrep()" style="width: 100%; margin-top: 4px;">Reset Logo Prep</button>
                 </div>
@@ -683,9 +683,9 @@
                     <input type="range" id="logoBlendY" min="0" max="100" value="50" step="0.1" style="width: 100%;">
                 </div>
 
-                <button class="mark-button" id="applyLogoBlendBtn" onclick="applyLogoBlendToPadding()" disabled>Apply Logo Blend to Padding</button>
+                <button class="mark-button" id="applyLogoBlendBtn" onclick="applyLogoBlendToPadding()" disabled>Reapply Logo Blend</button>
                 <div style="font-size: 11px; color: #666; margin-top: 8px;">
-                    <strong>Note:</strong> This automatically matches padding modules to the logo underneath, preserving your edit budget for data/ECC modules.
+                    <strong>Note:</strong> The QR preview updates automatically as you adjust the logo. Use reapply if you want to force a refresh.
                 </div>
 
                 <div id="logoBlendStatus" style="display: none; margin-top: 10px; padding: 8px; border-radius: 4px; font-size: 12px;"></div>
@@ -1078,6 +1078,46 @@
             syncQrMatrixToOtherTabs();
         }
 
+        let logoBlendAutoApplyTimer = null;
+
+        function canAutoApplyLogoBlend() {
+            return typeof logoBlendState !== 'undefined' &&
+                   logoBlendState.logoImg &&
+                   typeof originalMatrix !== 'undefined' &&
+                   originalMatrix &&
+                   typeof currentMatrix !== 'undefined' &&
+                   currentMatrix &&
+                   typeof encodedBitstream !== 'undefined' &&
+                   encodedBitstream &&
+                   encodedBitstream.blocks &&
+                   typeof paddingModuleMap !== 'undefined' &&
+                   paddingModuleMap &&
+                   typeof editableCells !== 'undefined' &&
+                   editableCells &&
+                   editableCells.size > 0;
+        }
+
+        function scheduleLogoBlendAutoApply(delay = 300) {
+            if (logoBlendAutoApplyTimer) {
+                clearTimeout(logoBlendAutoApplyTimer);
+            }
+
+            if (!canAutoApplyLogoBlend()) {
+                if (typeof renderPaddingGrid === 'function') {
+                    renderPaddingGrid();
+                }
+                syncLogoToOtherTabs();
+                return;
+            }
+
+            logoBlendAutoApplyTimer = setTimeout(function() {
+                logoBlendAutoApplyTimer = null;
+                if (canAutoApplyLogoBlend() && typeof applyLogoBlendToPadding === 'function') {
+                    applyLogoBlendToPadding();
+                }
+            }, delay);
+        }
+
         // Logo blend UI event handlers
         document.getElementById('logoBlendUpload')?.addEventListener('change', function(e) {
             const file = e.target.files[0];
@@ -1112,7 +1152,8 @@
                     // Sync to other tabs
                     syncLogoToOtherTabs();
 
-                    showLogoBlendStatus('✓ Logo loaded successfully! The logo now appears behind the QR grid. Click "Apply Logo Blend to Padding" to match padding modules.', 'success');
+                    showLogoBlendStatus('✓ Logo loaded successfully! The QR preview will update as you adjust the logo.', 'success');
+                    scheduleLogoBlendAutoApply();
                 });
             }
         });
@@ -1136,6 +1177,7 @@
                 }
 
                 syncLogoToOtherTabs();
+                scheduleLogoBlendAutoApply();
             });
         }
 
@@ -1183,6 +1225,7 @@
                     displayExtractedPalette();
                 }
             }
+            scheduleLogoBlendAutoApply();
         });
 
         document.getElementById('logoBlendTransparentTreatment')?.addEventListener('change', function(e) {
@@ -1191,6 +1234,7 @@
                 renderPaddingGrid();
             }
             syncLogoToOtherTabs();
+            scheduleLogoBlendAutoApply();
         });
 
         document.getElementById('darkMaxLumBlend')?.addEventListener('input', function(e) {
@@ -1199,6 +1243,7 @@
             if (typeof renderPaddingGrid === 'function') {
                 renderPaddingGrid();
             }
+            scheduleLogoBlendAutoApply();
         });
 
         document.getElementById('lightMinLumBlend')?.addEventListener('input', function(e) {
@@ -1207,6 +1252,7 @@
             if (typeof renderPaddingGrid === 'function') {
                 renderPaddingGrid();
             }
+            scheduleLogoBlendAutoApply();
         });
 
         document.getElementById('logoBlendScale')?.addEventListener('input', function(e) {
@@ -1216,6 +1262,7 @@
                 renderPaddingGrid();
             }
             syncLogoToOtherTabs();
+            scheduleLogoBlendAutoApply();
         });
 
         document.getElementById('logoBlendX')?.addEventListener('input', function(e) {
@@ -1225,6 +1272,7 @@
                 renderPaddingGrid();
             }
             syncLogoToOtherTabs();
+            scheduleLogoBlendAutoApply();
         });
 
         document.getElementById('logoBlendY')?.addEventListener('input', function(e) {
@@ -1234,6 +1282,7 @@
                 renderPaddingGrid();
             }
             syncLogoToOtherTabs();
+            scheduleLogoBlendAutoApply();
         });
 
         function displayExtractedPalette() {
@@ -1276,6 +1325,7 @@
                 if (typeof renderPaddingGrid === 'function') {
                     renderPaddingGrid();
                 }
+                scheduleLogoBlendAutoApply();
             });
         });
 

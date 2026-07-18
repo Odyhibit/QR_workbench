@@ -537,13 +537,52 @@ function drawErrorCorrectionQR() {
     errorCtx.save();
     errorCtx.fillStyle = 'rgba(255, 0, 0, 0.28)';
 
+    // Fill all outlines as one path so overlapping codeword
+    // bounds are painted once and stay a uniform shade
+    const covered = new Set();
+    errorCtx.beginPath();
     errorCodewordOutlines.forEach(bounds => {
         const x = (quietZone + bounds.minCol) * modulePixelSize;
         const y = (quietZone + bounds.minRow) * modulePixelSize;
         const w = (bounds.maxCol - bounds.minCol + 1) * modulePixelSize;
         const h = (bounds.maxRow - bounds.minRow + 1) * modulePixelSize;
-        errorCtx.fillRect(x, y, w, h);
+        errorCtx.rect(x, y, w, h);
+        for (let row = bounds.minRow; row <= bounds.maxRow; row++) {
+            for (let col = bounds.minCol; col <= bounds.maxCol; col++) {
+                covered.add(row * moduleCount + col);
+            }
+        }
     });
+    errorCtx.fill();
+
+    // Outline the union: stroke each edge where a covered
+    // module borders an uncovered one
+    errorCtx.strokeStyle = 'rgba(255, 0, 0, 0.9)';
+    errorCtx.lineWidth = 2;
+    errorCtx.beginPath();
+    covered.forEach(key => {
+        const row = Math.floor(key / moduleCount);
+        const col = key % moduleCount;
+        const x = (quietZone + col) * modulePixelSize;
+        const y = (quietZone + row) * modulePixelSize;
+        if (!covered.has((row - 1) * moduleCount + col)) {
+            errorCtx.moveTo(x, y);
+            errorCtx.lineTo(x + modulePixelSize, y);
+        }
+        if (!covered.has((row + 1) * moduleCount + col)) {
+            errorCtx.moveTo(x, y + modulePixelSize);
+            errorCtx.lineTo(x + modulePixelSize, y + modulePixelSize);
+        }
+        if (col === 0 || !covered.has(row * moduleCount + (col - 1))) {
+            errorCtx.moveTo(x, y);
+            errorCtx.lineTo(x, y + modulePixelSize);
+        }
+        if (col === moduleCount - 1 || !covered.has(row * moduleCount + (col + 1))) {
+            errorCtx.moveTo(x + modulePixelSize, y);
+            errorCtx.lineTo(x + modulePixelSize, y + modulePixelSize);
+        }
+    });
+    errorCtx.stroke();
 
     errorCtx.restore();
 }
