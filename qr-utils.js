@@ -94,7 +94,8 @@ function isFormatModule(row, col, moduleCount) {
     if (row === 8 && (col <= 8 || col >= moduleCount - 8)) return true;
 
     // Vertical strip (column 8, rows 0-8 and moduleCount-7 to moduleCount-1)
-    if (col === 8 && (row <= 8 || row >= moduleCount - 8)) return true;
+    // row moduleCount-8 is the dark module, not format information.
+    if (col === 8 && (row <= 8 || row >= moduleCount - 7)) return true;
 
     return false;
 }

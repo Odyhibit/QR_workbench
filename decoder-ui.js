@@ -498,6 +498,7 @@ function updateErrorCodewordOutlines() {
 
             errorCodewordOutlines.push({
                 ...bounds,
+                positions,
                 blockIdx,
                 codewordLabel: pos < block.dataBytes.length ? `D${pos}` : `E${pos - block.dataBytes.length}`
             });
@@ -537,21 +538,25 @@ function drawErrorCorrectionQR() {
     errorCtx.save();
     errorCtx.fillStyle = 'rgba(255, 0, 0, 0.28)';
 
-    // Fill all outlines as one path so overlapping codeword
-    // bounds are painted once and stay a uniform shade
+    // Fill corrected modules as one path so overlapping codewords
+    // are painted once and stay a uniform shade.
     const covered = new Set();
     errorCtx.beginPath();
-    errorCodewordOutlines.forEach(bounds => {
-        const x = (quietZone + bounds.minCol) * modulePixelSize;
-        const y = (quietZone + bounds.minRow) * modulePixelSize;
-        const w = (bounds.maxCol - bounds.minCol + 1) * modulePixelSize;
-        const h = (bounds.maxRow - bounds.minRow + 1) * modulePixelSize;
-        errorCtx.rect(x, y, w, h);
-        for (let row = bounds.minRow; row <= bounds.maxRow; row++) {
-            for (let col = bounds.minCol; col <= bounds.maxCol; col++) {
-                covered.add(row * moduleCount + col);
-            }
-        }
+    errorCodewordOutlines.forEach(codeword => {
+        if (!codeword.positions || !codeword.positions.length) return;
+
+        codeword.positions.forEach(pos => {
+            const key = pos.row * moduleCount + pos.col;
+            if (covered.has(key)) return;
+
+            covered.add(key);
+            errorCtx.rect(
+                (quietZone + pos.col) * modulePixelSize,
+                (quietZone + pos.row) * modulePixelSize,
+                modulePixelSize,
+                modulePixelSize
+            );
+        });
     });
     errorCtx.fill();
 
