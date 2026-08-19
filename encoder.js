@@ -372,5 +372,146 @@ function onApplyCustomPaddingClick() {
     }
 }
 
+function textToByteValues(text) {
+    const bytes = [];
+    for (let i = 0; i < text.length; i++) {
+        bytes.push(text.charCodeAt(i) & 0xFF);
+    }
+    return bytes;
+}
+
+function getPaddingStartByteIndex(bitstreamData) {
+    const messageBits = (bitstreamData.eciHeader || '').length +
+                       bitstreamData.modeIndicator.length +
+                       bitstreamData.charCount.length +
+                       bitstreamData.messageData.length +
+                       bitstreamData.terminator.length +
+                       bitstreamData.bytePadding.length;
+    return Math.ceil(messageBits / 8);
+}
+
+function applyPaddingOverrideBytes(bytes) {
+    if (bytes.length === 0) {
+        return 0;
+    }
+
+    const paddingStart = getPaddingStartByteIndex(encodedBitstream);
+    const count = Math.min(bytes.length, encodedBitstream.padBytes.length);
+    const newDataBytes = [...encodedBitstream.dataBytes];
+    const newPadBytes = [...encodedBitstream.padBytes];
+
+    for (let i = 0; i < count; i++) {
+        newDataBytes[paddingStart + i] = bytes[i];
+        newPadBytes[i] = bytes[i];
+    }
+
+    encodedBitstream.dataBytes = newDataBytes;
+    encodedBitstream.padBytes = newPadBytes;
+
+    document.querySelectorAll('[data-section="pad-byte"]').forEach((elem, index) => {
+        if (index < count) {
+            elem.textContent = bytes[index].toString(16).toUpperCase().padStart(2, '0');
+        }
+    });
+
+    return count;
+}
+
+function applyEccOverrideBytes(blocks, bytes) {
+    if (bytes.length === 0 || blocks.length === 0) {
+        return 0;
+    }
+
+    let applied = 0;
+    let eccOffset = 0;
+
+    while (applied < bytes.length) {
+        let wroteAtThisOffset = false;
+
+        for (let blockIndex = 0; blockIndex < blocks.length && applied < bytes.length; blockIndex++) {
+            const block = blocks[blockIndex];
+            if (!block.ecc || eccOffset >= block.ecc.length) {
+                continue;
+            }
+
+            block.ecc[eccOffset] = bytes[applied];
+            applied++;
+            wroteAtThisOffset = true;
+        }
+
+        if (!wroteAtThisOffset) {
+            break;
+        }
+        eccOffset++;
+    }
+
+    return applied;
+}
+
+function regenerateMatrixFromBlocks(blocks) {
+    const interleaved = interleaveBlocks(blocks);
+    displayInterleavedBytes(interleaved, blocks);
+
+    const size = getQrSize(currentVersion);
+    const matrix = createMatrix(size);
+    placeFunctionPatterns(matrix, currentVersion);
+    placeDataBits(matrix, interleaved);
+
+    const maskPattern = parseInt(document.getElementById('maskPatternSelect').value);
+    applyMask(matrix, maskPattern, currentVersion);
+    placeFormatInfo(matrix, currentEccLevel, maskPattern, currentVersion);
+    placeVersionInfo(matrix, currentVersion);
+
+    document.getElementById('qrCodeContainer').style.display = 'block';
+    currentMatrix = matrix;
+    originalMatrix = currentMatrix.map(row => [...row]);
+    renderQrCode(matrix);
+
+    if (typeof syncQrMatrixToOtherTabs === 'function') {
+        syncQrMatrixToOtherTabs();
+    }
+}
+
+function applyCustomData(button) {
+    if (!encodedBitstream) {
+        alert('Please encode bitstream first!');
+        return;
+    }
+
+    const paddingText = document.getElementById('paddingInput')?.value || '';
+    const eccText = document.getElementById('eccInput')?.value || '';
+
+    if (!paddingText && !eccText) {
+        alert('Enter padding or ECC text to insert.');
+        return;
+    }
+
+    if (encodedBitstream.blocks) {
+        const edited = readAllEditedValues(encodedBitstream, blockSizeTable, currentVersion, currentEccLevel);
+        encodedBitstream.dataBytes = edited.dataBytes;
+        encodedBitstream.blocks = edited.blocks;
+    }
+
+    const paddingApplied = applyPaddingOverrideBytes(textToByteValues(paddingText));
+
+    let blocks = splitIntoBlocks(encodedBitstream.dataBytes, currentVersion, currentEccLevel, blockSizeTable);
+    calculateEccForBlocks(blocks);
+
+    const eccApplied = applyEccOverrideBytes(blocks, textToByteValues(eccText));
+    encodedBitstream.blocks = blocks;
+
+    displayEcc(blocks);
+    regenerateMatrixFromBlocks(blocks);
+    buildPaddingEditorData();
+
+    if (button) {
+        const originalText = button.textContent;
+        button.textContent = `Applied ${paddingApplied} padding, ${eccApplied} ECC bytes`;
+        setTimeout(() => {
+            button.textContent = originalText;
+        }, 1600);
+    }
+}
+
 // Initialize on load
 init();

@@ -762,6 +762,96 @@ function displayInterleavedBytes(interleaved, blocks) {
     container.innerHTML = html;
 }
 
+function renderAnsiUtf8(matrix, quietZone = 2) {
+    const size = matrix.length;
+    const paddedSize = size + quietZone * 2;
+    const lines = [];
+
+    const moduleIsDark = (row, col) => {
+        const matrixRow = row - quietZone;
+        const matrixCol = col - quietZone;
+        if (matrixRow < 0 || matrixRow >= size || matrixCol < 0 || matrixCol >= size) {
+            return false;
+        }
+        return !!matrix[matrixRow][matrixCol];
+    };
+
+    for (let row = 0; row < paddedSize; row += 2) {
+        let line = '';
+        for (let col = 0; col < paddedSize; col++) {
+            const topDark = moduleIsDark(row, col);
+            const bottomDark = row + 1 < paddedSize ? moduleIsDark(row + 1, col) : false;
+
+            if (topDark && bottomDark) {
+                line += ' ';
+            } else if (topDark) {
+                line += '▄';
+            } else if (bottomDark) {
+                line += '▀';
+            } else {
+                line += '█';
+            }
+        }
+        lines.push(line);
+    }
+
+    return lines.join('\n');
+}
+
+function updateAnsiOutput(matrix) {
+    const output = document.getElementById('ansiOutput');
+    const meta = document.getElementById('ansiMeta');
+    const copyButton = document.getElementById('copyAnsiButton');
+    const downloadButton = document.getElementById('downloadAnsiButton');
+
+    if (!output) {
+        return;
+    }
+
+    if (!matrix) {
+        output.textContent = 'Generate a QR code to create ANSI output...';
+        if (meta) meta.textContent = '';
+        if (copyButton) copyButton.disabled = true;
+        if (downloadButton) downloadButton.disabled = true;
+        return;
+    }
+
+    const quietZone = 2;
+    const ansi = renderAnsiUtf8(matrix, quietZone);
+    const paddedSize = matrix.length + quietZone * 2;
+
+    output.textContent = ansi;
+    output.dataset.ansi = ansi;
+    if (meta) {
+        meta.textContent = `${paddedSize} modules wide, ${Math.ceil(paddedSize / 2)} terminal rows, margin ${quietZone}`;
+    }
+    if (copyButton) copyButton.disabled = false;
+    if (downloadButton) downloadButton.disabled = false;
+}
+
+async function copyAnsiOutput() {
+    const output = document.getElementById('ansiOutput');
+    if (!output || !output.dataset.ansi) {
+        return;
+    }
+
+    await navigator.clipboard.writeText(output.dataset.ansi);
+}
+
+function downloadAnsiOutput() {
+    const output = document.getElementById('ansiOutput');
+    if (!output || !output.dataset.ansi) {
+        return;
+    }
+
+    const blob = new Blob([output.dataset.ansi + '\n'], { type: 'text/plain;charset=utf-8' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = 'qr-code-ansi.txt';
+    link.click();
+    URL.revokeObjectURL(link.href);
+}
+
 // Render QR code to canvas
 function renderQrCode(matrix) {
     const canvas = document.getElementById('qrCanvas');
@@ -800,4 +890,6 @@ function renderQrCode(matrix) {
     // Show canvas
     canvas.style.display = 'block';
     document.getElementById('qrPlaceholder').style.display = 'none';
+
+    updateAnsiOutput(matrix);
 }

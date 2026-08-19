@@ -1,0 +1,15 @@
+/.DS_Store
+/.idea/
+/.preamble/
+/AGENTS.md
+/CLAUDE.md
+/PREAMBLE.md
+/ansi_qr.txt
+/bit_plane_test.py
+/gj-solver.js
+/image_to_test.webp
+/node_modules/
+/overlay_project/
+/package-lock.json
+/package.json
+/qrcodegen.ts

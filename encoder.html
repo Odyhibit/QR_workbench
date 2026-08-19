@@ -156,6 +156,30 @@
             border-color: #4a9eff;
             background: #f8fcff;
         }
+
+        .ansi-output {
+            margin: 0;
+            padding: 12px;
+            overflow: auto;
+            background: #111;
+            color: #f5f5f5;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 16px;
+            line-height: 1;
+            letter-spacing: 0;
+            white-space: pre;
+        }
+
+        .ansi-actions {
+            display: flex;
+            gap: 8px;
+            margin: 8px 0;
+        }
+
+        .ansi-actions .mark-button {
+            margin-bottom: 0;
+        }
     </style>
 </head>
 <body>
@@ -530,6 +554,16 @@
                 <h2>Generated QR Code</h2>
                 <canvas id="qrCanvas" width="600" height="600" style="border: 1px solid #ddd; background: white; display: none;"></canvas>
                 <p id="qrPlaceholder" style="color: #999; padding: 20px;">QR code will appear here after generation...</p>
+            </div>
+
+            <div class="canvas-container" id="ansiCodeContainer" style="margin-top: 20px;">
+                <h2>ANSI UTF-8 QR Code</h2>
+                <div id="ansiMeta" style="margin-bottom: 8px; font-size: 12px; color: #666;"></div>
+                <pre id="ansiOutput" class="ansi-output">Generate a QR code to create ANSI output...</pre>
+                <div class="ansi-actions">
+                    <button class="mark-button" id="copyAnsiButton" onclick="copyAnsiOutput()" disabled>Copy ANSI Text</button>
+                    <button class="mark-button" id="downloadAnsiButton" onclick="downloadAnsiOutput()" disabled>Download TXT</button>
+                </div>
             </div>
 
             <div class="canvas-container" style="margin-top: 20px;">
@@ -1013,6 +1047,10 @@
     <script>
         // Sync logo settings from Logo tab to Size & Color and Module Delete tabs
         function syncQrMatrixToOtherTabs() {
+            if (typeof updateAnsiOutput === 'function') {
+                updateAnsiOutput(currentMatrix);
+            }
+
             // Re-render Size & Color against the current QR matrix if that tab has a canvas.
             if (typeof sizeColorState !== 'undefined' && document.getElementById('sizeColorCanvas') && typeof renderSizeColorQR === 'function') {
                 renderSizeColorQR();
