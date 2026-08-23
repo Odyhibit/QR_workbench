@@ -1,4 +1,12 @@
-This tool can be used to explore QR codes and the things that make them up.
+# This tool can be used to explore QR codes and the things that make them up.
+## It's not pretty, but it can help you understand QR codes.
+
+The decoder works step, by step, and shows each step on screen. 
+
+The encoder allows you to edit the information stored in the QR code at the binary level.
+It also allows you do some interesting things with the Physical layout of the modules, and the size/shape of the modules.
+
+Try it out here https://odyhibit.github.io/QR_workbench/
 
 Quick start (local):
 1) Clone the repo and enter it:
