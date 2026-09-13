@@ -790,10 +790,18 @@ function drawImageWithGrid() {
         decodeSizeButton.disabled = true;
         setMessageSizeText('-');
 
+        // These three format-info notices all share one dedupe key ('formatInfoStatus')
+        // rather than being deduped on their exact wording: while dragging a corner
+        // pixel by pixel, the sampled bits (and so the guessed ECC/mask/distance) can
+        // change on every redraw, which would otherwise produce a constant stream of
+        // slightly-different-looking banners. Sharing a key means only the first
+        // status shown for this image sticks - later redraws still update the
+        // dropdowns/state correctly, just without re-announcing every guess.
         if (formatInfo.distance > 0) {
             showMessage(
                 `Format info auto-detected from the ${formatInfo.source} copy (corrected ${formatInfo.distance} damaged bit${formatInfo.distance === 1 ? '' : 's'}): ECC ${formatInfo.eccLevel}, mask ${formatInfo.maskPattern}. Override below if this looks wrong.`,
-                'info'
+                'info',
+                'formatInfoStatus'
             );
         } else if (formatInfo.source !== 'top-left') {
             // The primary (top-left) copy must have been unreadable/damaged for the
@@ -801,7 +809,8 @@ function drawImageWithGrid() {
             // needed correcting once we got there.
             showMessage(
                 `Format info auto-detected from the ${formatInfo.source} copy: ECC ${formatInfo.eccLevel}, mask ${formatInfo.maskPattern}. (The top-left copy didn't match - that corner may be damaged.) Override below if this looks wrong.`,
-                'info'
+                'info',
+                'formatInfoStatus'
             );
         }
     } else {
@@ -821,7 +830,8 @@ function drawImageWithGrid() {
             : '';
         showMessage(
             `Could not reliably auto-detect the error correction level or mask pattern - both copies of the format info look damaged.${guessNote} Please select them manually in the Format Information panel to continue.`,
-            'warning'
+            'warning',
+            'formatInfoStatus'
         );
     }
 
@@ -1103,6 +1113,10 @@ function copyEccToClipboard(button) {
 
 // Reset all decoder state when loading a new image
 function resetDecoderState() {
+    // Starting a new image is a new "workflow" - let messages that already showed
+    // for the previous image (e.g. format-info auto-detect notices) show again.
+    if (typeof resetMessageHistory === 'function') resetMessageHistory();
+
     // Reset state variables
     moduleMatrix = null;
     originalMatrix = null;

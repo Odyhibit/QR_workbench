@@ -6,6 +6,12 @@
 (function () {
     const AUTO_DISMISS_MS = { success: 4000, info: 5000, warning: 0, error: 0 };
 
+    // Messages already shown this "workflow" (since page load, or since the last
+    // resetMessageHistory() call - e.g. loading a new image) don't show again. This
+    // keeps something like corner-dragging, which redraws and re-detects on every
+    // tiny move, from repeating the same banner dozens of times in a row.
+    const shownMessages = new Set();
+
     function getContainer() {
         let container = document.getElementById('uiMessageContainer');
         if (!container) {
@@ -16,9 +22,21 @@
         return container;
     }
 
-    // Show a dismissible on-screen message. type: 'error' | 'warning' | 'success' | 'info'
-    function showMessage(text, type) {
+    // Show a dismissible on-screen message. type: 'error' | 'warning' | 'success' | 'info'.
+    // Only shows once per workflow - see shownMessages above. By default that's keyed
+    // on the exact (type, text) pair, but pass `key` explicitly to mark several calls
+    // as "the same notification slot" even when their wording (or type) varies run to
+    // run - e.g. a status guess whose numbers change as the user fine-tunes something,
+    // or a family of related info/warning variants for one situation. When `key` is
+    // given it's the *entire* dedupe identity (type and text are ignored for dedupe
+    // purposes), so whichever variant fires first claims the slot.
+    function showMessage(text, type, key) {
         type = type || 'error';
+
+        const dedupeKey = key || (type + ':' + text);
+        if (shownMessages.has(dedupeKey)) return null;
+        shownMessages.add(dedupeKey);
+
         const container = getContainer();
 
         const card = document.createElement('div');
@@ -89,7 +107,17 @@
         return card;
     }
 
+    // Forget which messages have already been shown, so the next occurrence of any
+    // of them shows again. Call this when starting a new "workflow" - e.g. loading a
+    // new image - so stale detection results from a previous image don't suppress a
+    // genuinely new message. (A page refresh clears it naturally, since this Set is
+    // just an in-memory variable.)
+    function resetMessageHistory() {
+        shownMessages.clear();
+    }
+
     // Expose globally - loaded as a plain script (no module system) alongside the other tool scripts.
     window.showMessage = showMessage;
     window.showConfirm = showConfirm;
+    window.resetMessageHistory = resetMessageHistory;
 })();
