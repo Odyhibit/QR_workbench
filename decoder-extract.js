@@ -595,12 +595,12 @@ function unmaskQRCode() {
     drawCleanQR();
 }
 
-// Extract format information from QR code
+// Extract format information from QR code (copy 1: around the top-left finder pattern)
 function extractFormatInfo() {
     if (!moduleMatrix) return null;
 
-    // Format information is 15 bits stored in two locations
-    // Location 1: Around top-left finder pattern
+    // Format information is 15 bits stored in two locations, for redundancy.
+    // This reads the primary copy, next to the top-left finder pattern.
     const formatBits = [];
 
     // Read format bits from around top-left finder
@@ -625,32 +625,123 @@ function extractFormatInfo() {
     return formatBits;
 }
 
-// Decode format information
+// Extract the redundant second copy of format information, split between the strip
+// below the bottom-left finder pattern and the strip left of the top-right finder
+// pattern. Same bit ordering as extractFormatInfo() (bit 0 = MSB). This is what lets
+// the decoder recover ECC level / mask pattern even when the top-left copy - and its
+// surrounding finder pattern - is damaged.
+function extractFormatInfoCopy2(moduleCount) {
+    if (!moduleMatrix) return null;
+
+    const size = moduleCount || moduleMatrix.length;
+    const formatBits = [];
+
+    // Bits 0-6 (positions 14 down to 8): column 8, rows (size-1) down to (size-7)
+    for (let row = size - 1; row >= size - 7; row--) {
+        formatBits.push(moduleMatrix[row][8] ? 1 : 0);
+    }
+
+    // Bits 7-14 (positions 7 down to 0): row 8, columns (size-8) up to (size-1)
+    for (let col = size - 8; col <= size - 1; col++) {
+        formatBits.push(moduleMatrix[8][col] ? 1 : 0);
+    }
+
+    return formatBits;
+}
+
+// All 32 valid (masked) 15-bit format-info codewords, one per ECC level / mask pattern
+// combination, built with the same BCH(15,5) generator and XOR mask used to encode
+// format info (see calculateFormatBits in encoder-core.js). Built lazily and cached.
+let formatInfoTable = null;
+function getFormatInfoTable() {
+    if (formatInfoTable) return formatInfoTable;
+
+    const eccBitsByLevel = { L: 0b01, M: 0b00, Q: 0b11, H: 0b10 };
+    const generator = 0b10100110111; // x^10 + x^8 + x^5 + x^4 + x^2 + x + 1
+    const mask = 0b101010000010010;
+
+    formatInfoTable = [];
+    for (const eccLevel of Object.keys(eccBitsByLevel)) {
+        for (let maskPattern = 0; maskPattern < 8; maskPattern++) {
+            const data = (eccBitsByLevel[eccLevel] << 3) | maskPattern;
+            let bch = data << 10;
+            for (let i = 0; i < 5; i++) {
+                if ((bch >> (14 - i)) & 1) {
+                    bch ^= generator << (4 - i);
+                }
+            }
+            const bits = ((data << 10) | bch) ^ mask;
+            formatInfoTable.push({ eccLevel, maskPattern, bits });
+        }
+    }
+    return formatInfoTable;
+}
+
+function hammingDistance(a, b) {
+    let diff = a ^ b;
+    let count = 0;
+    while (diff) {
+        count += diff & 1;
+        diff >>= 1;
+    }
+    return count;
+}
+
+// Decode one 15-bit format-info reading against the 32 valid codewords, correcting
+// up to 3 bit errors (the max this BCH(15,5) code guarantees) by picking the nearest
+// match. Returns null only if formatBits is missing/short.
 function decodeFormatInfo(formatBits) {
     if (!formatBits || formatBits.length < 15) return null;
 
-    // XOR mask that's applied to format info
-    const mask = 0b101010000010010;
-
-    // Convert bits to number
-    let formatValue = 0;
+    let rawValue = 0;
     for (let i = 0; i < 15; i++) {
-        formatValue = (formatValue << 1) | formatBits[i];
+        rawValue = (rawValue << 1) | formatBits[i];
     }
 
-    // Remove mask
-    formatValue ^= mask;
-
-    // Extract ECC level (bits 14-13, which are now at positions 0-1 after shift)
-    const eccBits = (formatValue >> 13) & 0b11;
-    const eccLevels = ['M', 'L', 'H', 'Q'];
-    const eccLevel = eccLevels[eccBits];
-
-    // Extract mask pattern (bits 12-10, which are now at positions 2-4)
-    const maskBits = (formatValue >> 10) & 0b111;
+    let best = null;
+    let bestDistance = Infinity;
+    for (const entry of getFormatInfoTable()) {
+        const distance = hammingDistance(rawValue, entry.bits);
+        if (distance < bestDistance) {
+            bestDistance = distance;
+            best = entry;
+        }
+    }
 
     return {
-        eccLevel: eccLevel,
-        maskPattern: maskBits
+        eccLevel: best.eccLevel,
+        maskPattern: best.maskPattern,
+        distance: bestDistance
+    };
+}
+
+// Auto-detect ECC level and mask pattern by reading both redundant copies of the
+// format info and taking whichever needed fewer bit corrections. `reliable` is false
+// when even the better copy is too damaged to trust (more than 3 bits off from any
+// valid codeword) - callers should fall back to asking the user to choose manually.
+function decodeFormatInfoRobust() {
+    if (!moduleMatrix) return null;
+
+    const moduleCount = moduleMatrix.length;
+    const copy1 = decodeFormatInfo(extractFormatInfo());
+    const copy2 = decodeFormatInfo(extractFormatInfoCopy2(moduleCount));
+
+    if (!copy1 && !copy2) return null;
+
+    let winner, source;
+    if (copy1 && (!copy2 || copy1.distance <= copy2.distance)) {
+        winner = copy1;
+        source = 'top-left';
+    } else {
+        winner = copy2;
+        source = 'bottom-left/top-right';
+    }
+
+    return {
+        eccLevel: winner.eccLevel,
+        maskPattern: winner.maskPattern,
+        distance: winner.distance,
+        source,
+        reliable: winner.distance <= 3
     };
 }

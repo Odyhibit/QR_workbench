@@ -381,7 +381,7 @@ function updateDeinterleaveAvailability() {
 // De-interleave data from multiple blocks
 function deinterleaveData() {
     if (!isBitstreamRecovered) {
-        alert('Recover the full bitstream before de-interleaving.');
+        showMessage('Recover the full bitstream before de-interleaving.', 'error');
         return;
     }
 
@@ -389,13 +389,13 @@ function deinterleaveData() {
     const ecc = currentEccLevel;
     const config = getBlockConfig(version, ecc);
     if (!config) {
-        alert(`No block size entry found for version ${version} and ECC ${ecc}.`);
+        showMessage(`No block size entry found for version ${version} and ECC ${ecc}.`, 'error');
         return;
     }
 
     const totalBlocks = (config.g1Blocks || 0) + (config.g2Blocks || 0);
     if (!totalBlocks) {
-        alert('Block information is missing or invalid for this version/ECC.');
+        showMessage('Block information is missing or invalid for this version/ECC.', 'error');
         return;
     }
     const blockCountSpan = document.getElementById('blockCount');
@@ -414,7 +414,7 @@ function deinterleaveData() {
     const rawBits = recoveredBitstream.replace(/\s+/g, '');
     const requiredBits = expectedTotal * 8;
     if (expectedTotal && rawBits.length < requiredBits) {
-        alert(`Bitstream has fewer bits (${rawBits.length}) than expected (${requiredBits}).`);
+        showMessage(`Bitstream has fewer bits (${rawBits.length}) than expected (${requiredBits}).`, 'error');
         return;
     }
 
@@ -573,7 +573,7 @@ function getModulePositionsForRecoveredCodeword(byteIndex) {
 function decodeMode() {
     if (isModeDecoded) return;
     if (!deinterleavedDataBits || deinterleavedDataBits.length < 4) {
-        alert('De-interleave data (or recover bitstream for single-block codes) before decoding mode.');
+        showMessage('De-interleave data (or recover bitstream for single-block codes) before decoding mode.', 'error');
         return;
     }
 
@@ -618,7 +618,7 @@ function decodeMode() {
             hasECI = true;
             const eciResult = decodeECIAssignment(deinterleavedDataBits, bitOffset);
             if (eciResult.bitsRead === 0) {
-                alert('Failed to decode ECI assignment number.');
+                showMessage('Failed to decode ECI assignment number.', 'error');
                 return;
             }
 
@@ -631,7 +631,7 @@ function decodeMode() {
 
             // Now read the actual data mode (next 4 bits)
             if (bitOffset + 4 > deinterleavedDataBits.length) {
-                alert('Not enough bits to read data mode after ECI.');
+                showMessage('Not enough bits to read data mode after ECI.', 'error');
                 return;
             }
 
@@ -735,12 +735,12 @@ function decodeSize() {
 
     // Only decode for supported modes
     if (!['Numeric', 'Alphanumeric', 'Byte'].includes(currentDataMode)) {
-        alert(`Size decoding not yet supported for ${currentDataMode} mode.`);
+        showMessage(`Size decoding not yet supported for ${currentDataMode} mode.`, 'error');
         return;
     }
 
     if (!deinterleavedDataBits || deinterleavedDataBits.length < 12) {
-        alert('Decode mode first, then ensure de-interleaved data is available.');
+        showMessage('Decode mode first, then ensure de-interleaved data is available.', 'error');
         return;
     }
 
@@ -756,7 +756,7 @@ function decodeSize() {
     }
 
     if (deinterleavedDataBits.length < start + bitCount) {
-        alert('Not enough bits to decode size.');
+        showMessage('Not enough bits to decode size.', 'error');
         return;
     }
 

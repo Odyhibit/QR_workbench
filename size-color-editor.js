@@ -861,7 +861,7 @@ function renderSizeColorQR() {
  */
 function initializeSizeColorEditor() {
     if (!currentMatrix) {
-        alert('Please generate a QR code first.');
+        showMessage('Please generate a QR code first.', 'error');
         return;
     }
 

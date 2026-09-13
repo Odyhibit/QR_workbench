@@ -682,33 +682,67 @@ function drawImageWithGrid() {
     // Calculate byte mode mask hint
     updateByteMaskHint();
 
-    // Extract and display format information
-    const formatBits = extractFormatInfo();
-    if (formatBits) {
-        const formatInfo = decodeFormatInfo(formatBits);
-        if (formatInfo) {
-            // Update dropdowns with detected values
-            updateEccDropdowns(formatInfo.eccLevel);
-            updateMaskDropdowns(formatInfo.maskPattern);
-            currentEccLevel = formatInfo.eccLevel;
+    // Auto-detect ECC level and mask pattern from the format info, using both redundant
+    // copies (with BCH error correction) so a damaged strip in one corner doesn't sink
+    // the detection. If neither copy is trustworthy, leave the choice to the user
+    // instead of silently locking in a guess.
+    const formatInfo = decodeFormatInfoRobust();
+    if (formatInfo && formatInfo.reliable) {
+        // Update dropdowns with detected values
+        updateEccDropdowns(formatInfo.eccLevel);
+        updateMaskDropdowns(formatInfo.maskPattern);
+        currentEccLevel = formatInfo.eccLevel;
 
-            // Update unmask button
-            currentMaskPattern = formatInfo.maskPattern;
-            const unmaskButton = document.getElementById('unmaskButton');
-            unmaskButton.textContent = `Unmask ${currentMaskPattern}`;
-            unmaskButton.disabled = false;
-            isUnmasked = false; // Reset unmask state when new image loaded
+        // Update unmask button
+        currentMaskPattern = formatInfo.maskPattern;
+        const unmaskButton = document.getElementById('unmaskButton');
+        unmaskButton.textContent = `Unmask ${currentMaskPattern}`;
+        unmaskButton.disabled = false;
+        isUnmasked = false; // Reset unmask state when new image loaded
 
-            // Reset decode mode button
-            const decodeModeButton = document.getElementById('decodeModeButton');
-            decodeModeButton.disabled = true; // Disabled until unmask is clicked
-            document.getElementById('dataMode').textContent = '-';
+        // Reset decode mode button
+        const decodeModeButton = document.getElementById('decodeModeButton');
+        decodeModeButton.disabled = true; // Disabled until unmask is clicked
+        document.getElementById('dataMode').textContent = '-';
 
-            // Reset decode size button
-            const decodeSizeButton = document.getElementById('decodeSizeButton');
-            decodeSizeButton.disabled = true;
-            document.getElementById('messageSize').textContent = '-';
+        // Reset decode size button
+        const decodeSizeButton = document.getElementById('decodeSizeButton');
+        decodeSizeButton.disabled = true;
+        document.getElementById('messageSize').textContent = '-';
+
+        if (formatInfo.distance > 0) {
+            showMessage(
+                `Format info auto-detected from the ${formatInfo.source} copy (corrected ${formatInfo.distance} damaged bit${formatInfo.distance === 1 ? '' : 's'}): ECC ${formatInfo.eccLevel}, mask ${formatInfo.maskPattern}. Override below if this looks wrong.`,
+                'info'
+            );
+        } else if (formatInfo.source !== 'top-left') {
+            // The primary (top-left) copy must have been unreadable/damaged for the
+            // fallback copy to win outright - worth flagging even though no bits
+            // needed correcting once we got there.
+            showMessage(
+                `Format info auto-detected from the ${formatInfo.source} copy: ECC ${formatInfo.eccLevel}, mask ${formatInfo.maskPattern}. (The top-left copy didn't match - that corner may be damaged.) Override below if this looks wrong.`,
+                'info'
+            );
         }
+    } else {
+        // Neither copy of the format info could be trusted - clear the choice rather
+        // than lock in a guess, and let the user pick ECC level / mask pattern manually.
+        currentEccLevel = '';
+        currentMaskPattern = -1;
+        updateEccDropdowns('');
+        updateMaskDropdowns(-1);
+
+        const unmaskButton = document.getElementById('unmaskButton');
+        unmaskButton.textContent = 'Unmask';
+        unmaskButton.disabled = true;
+
+        const guessNote = formatInfo
+            ? ` Closest guess was ECC ${formatInfo.eccLevel} / mask ${formatInfo.maskPattern}, but it differs from any valid format code by ${formatInfo.distance} bits - too damaged to trust.`
+            : '';
+        showMessage(
+            `Could not reliably auto-detect the error correction level or mask pattern - both copies of the format info look damaged.${guessNote} Please select them manually in the Format Information panel to continue.`,
+            'warning'
+        );
     }
 
     // Update tab 2 version info
@@ -938,7 +972,7 @@ function displayBlocksAsHex() {
 // Copy data codewords to clipboard as space-delimited hex
 function copyDataToClipboard(button) {
     if (!qrBlocks || qrBlocks.length === 0) {
-        alert('No data blocks available. Please decode a QR code first.');
+        showMessage('No data blocks available. Please decode a QR code first.', 'error');
         return;
     }
 
@@ -959,14 +993,14 @@ function copyDataToClipboard(button) {
             button.textContent = originalText;
         }, 1500);
     }).catch(err => {
-        alert('Failed to copy to clipboard: ' + err);
+        showMessage('Failed to copy to clipboard: ' + err, 'error');
     });
 }
 
 // Copy ECC codewords to clipboard as space-delimited hex
 function copyEccToClipboard(button) {
     if (!qrBlocks || qrBlocks.length === 0) {
-        alert('No ECC blocks available. Please decode a QR code first.');
+        showMessage('No ECC blocks available. Please decode a QR code first.', 'error');
         return;
     }
 
@@ -987,7 +1021,7 @@ function copyEccToClipboard(button) {
             button.textContent = originalText;
         }, 1500);
     }).catch(err => {
-        alert('Failed to copy to clipboard: ' + err);
+        showMessage('Failed to copy to clipboard: ' + err, 'error');
     });
 }
 

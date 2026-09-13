@@ -91,15 +91,16 @@ function onMessageInput() {
 
 // Button handlers - these are called from HTML onclick attributes
 function onEncodeBitstreamClick() {
-    const result = encodeBitstream(currentMessage, currentMode, currentVersion, currentEccLevel, capacityTable, NUMERIC_CHARSET, ALPHANUMERIC_CHARSET);
-    if (result) {
-        encodedBitstream = result;
-    }
+    encodeBitstream(currentMessage, currentMode, currentVersion, currentEccLevel, capacityTable, NUMERIC_CHARSET, ALPHANUMERIC_CHARSET, function (result) {
+        if (result) {
+            encodedBitstream = result;
+        }
+    });
 }
 
 function onCalculateEccClick() {
     if (!encodedBitstream) {
-        alert('Please encode bitstream first!');
+        showMessage('Please encode bitstream first!', 'error');
         return;
     }
 
@@ -126,7 +127,7 @@ function onCalculateEccClick() {
 
 function onGenerateQrCodeClick() {
     if (!encodedBitstream || !encodedBitstream.blocks) {
-        alert('Please calculate ECC first!');
+        showMessage('Please calculate ECC first!', 'error');
         return;
     }
 
@@ -236,7 +237,7 @@ function buildPaddingEditorData() {
 
 function onZeroPaddingClick() {
     if (!encodedBitstream) {
-        alert('Please encode bitstream first!');
+        showMessage('Please encode bitstream first!', 'error');
         return;
     }
 
@@ -282,7 +283,7 @@ function onZeroPaddingClick() {
 
 function onApplyCustomPaddingClick() {
     if (!encodedBitstream) {
-        alert('Please encode bitstream first!');
+        showMessage('Please encode bitstream first!', 'error');
         return;
     }
 
@@ -291,7 +292,7 @@ function onApplyCustomPaddingClick() {
 
     // Check if input is valid
     if (!validateHexInput(inputValue)) {
-        alert('Invalid hex characters detected. Please use only 0-9 and A-F, separated by spaces or commas.');
+        showMessage('Invalid hex characters detected. Please use only 0-9 and A-F, separated by spaces or commas.', 'error');
         return;
     }
 
@@ -299,7 +300,7 @@ function onApplyCustomPaddingClick() {
     const customBytes = parseCustomPaddingHex(inputValue);
 
     if (customBytes.length === 0) {
-        alert('No hex values provided.');
+        showMessage('No hex values provided.', 'error');
         return;
     }
 
@@ -474,7 +475,7 @@ function regenerateMatrixFromBlocks(blocks) {
 
 function applyCustomData(button) {
     if (!encodedBitstream) {
-        alert('Please encode bitstream first!');
+        showMessage('Please encode bitstream first!', 'error');
         return;
     }
 
@@ -482,7 +483,7 @@ function applyCustomData(button) {
     const eccText = document.getElementById('eccInput')?.value || '';
 
     if (!paddingText && !eccText) {
-        alert('Enter padding or ECC text to insert.');
+        showMessage('Enter padding or ECC text to insert.', 'error');
         return;
     }
 

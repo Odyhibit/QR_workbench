@@ -474,11 +474,14 @@ function displayBitstream(bitstream, currentMode, currentMessage) {
     document.getElementById('applyCustomPaddingButton').disabled = false;
 }
 
-// Encode bitstream (called by button)
-function encodeBitstream(currentMessage, currentMode, currentVersion, currentEccLevel, capacityTable, NUMERIC_CHARSET, ALPHANUMERIC_CHARSET) {
+// Encode bitstream (called by button). Since invalid-character confirmation is now an
+// on-screen (non-blocking) prompt instead of window.confirm(), the result is delivered
+// via onComplete(encodedBitstream | null) instead of a return value.
+function encodeBitstream(currentMessage, currentMode, currentVersion, currentEccLevel, capacityTable, NUMERIC_CHARSET, ALPHANUMERIC_CHARSET, onComplete) {
     if (currentMessage.length === 0) {
-        alert('Please enter a message first!');
-        return null;
+        showMessage('Please enter a message first!', 'error');
+        if (onComplete) onComplete(null);
+        return;
     }
 
     // Check for invalid characters
@@ -490,22 +493,28 @@ function encodeBitstream(currentMessage, currentMode, currentVersion, currentEcc
         }
     }
 
-    if (hasInvalid) {
-        if (!confirm('Your message contains invalid characters for the selected mode. Encode anyway?')) {
-            return null;
-        }
+    function doEncode() {
+        // Generate bitstream
+        const encodedBitstream = generateBitstream(currentMessage, currentMode, currentVersion, currentEccLevel, capacityTable);
+        displayBitstream(encodedBitstream, currentMode, currentMessage);
+
+        // Enable the Encode tab button and switch to it
+        const encodeTabButton = document.querySelectorAll('.tab-button')[1];
+        encodeTabButton.disabled = false;
+        switchTab(1);
+
+        if (onComplete) onComplete(encodedBitstream);
     }
 
-    // Generate bitstream
-    const encodedBitstream = generateBitstream(currentMessage, currentMode, currentVersion, currentEccLevel, capacityTable);
-    displayBitstream(encodedBitstream, currentMode, currentMessage);
-
-    // Enable the Encode tab button and switch to it
-    const encodeTabButton = document.querySelectorAll('.tab-button')[1];
-    encodeTabButton.disabled = false;
-    switchTab(1);
-
-    return encodedBitstream;
+    if (hasInvalid) {
+        showConfirm(
+            'Your message contains invalid characters for the selected mode. Encode anyway?',
+            doEncode,
+            () => { if (onComplete) onComplete(null); }
+        );
+    } else {
+        doEncode();
+    }
 }
 
 // Display ECC in both editable and block views

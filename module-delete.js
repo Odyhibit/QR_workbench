@@ -701,6 +701,15 @@ function setupDeleteCanvasEvents() {
                         deleteState.blockInfo[blockIndex].deletedCount--;
                     }
                 } else {
+                    const finalizeDelete = () => {
+                        deleteState.deletedCodewords.add(codewordIndex);
+                        if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
+                            deleteState.blockInfo[blockIndex].deletedCount++;
+                        }
+                        updateDeleteInfo();
+                        renderDeleteCanvas();
+                    };
+
                     // Check if we can delete from this block
                     if (blockIndex !== null && deleteState.blockInfo[blockIndex]) {
                         const block = deleteState.blockInfo[blockIndex];
@@ -708,23 +717,19 @@ function setupDeleteCanvasEvents() {
 
                         if (block.deletedCount >= maxErrors) {
                             // Beyond error correction capacity - require confirmation
-                            const confirmMsg = block.deletedCount >= maxErrors
-                                ? `Warning: Block ${blockIndex + 1} is at or beyond error correction capacity!\n\n` +
-                                  `Max correctable errors: ${maxErrors}\n` +
-                                  `Currently deleted: ${block.deletedCount}\n\n` +
-                                  `Deleting more codewords will likely make the QR code unscannable.\n\n` +
-                                  `Continue anyway?`
-                                : null;
-
-                            if (confirmMsg && !confirm(confirmMsg)) {
-                                return;
-                            }
+                            showConfirm(
+                                `Warning: Block ${blockIndex + 1} is at or beyond error correction capacity!\n\n` +
+                                `Max correctable errors: ${maxErrors}\n` +
+                                `Currently deleted: ${block.deletedCount}\n\n` +
+                                `Deleting more codewords will likely make the QR code unscannable.\n\n` +
+                                `Continue anyway?`,
+                                finalizeDelete
+                            );
+                            return;
                         }
-                        deleteState.deletedCodewords.add(codewordIndex);
-                        block.deletedCount++;
-                    } else {
-                        deleteState.deletedCodewords.add(codewordIndex);
                     }
+                    finalizeDelete();
+                    return;
                 }
             } else {
                 const bitIndex = getBitIndexForModule(row, col, codewordIndex);
@@ -899,7 +904,7 @@ function resetAllDeletes() {
         return;
     }
 
-    if (confirm('Reset all changes?')) {
+    showConfirm('Reset all changes?', () => {
         deleteState.deletedCodewords.clear();
         deleteState.modifiedCodewords.clear();
 
@@ -912,7 +917,7 @@ function resetAllDeletes() {
 
         updateDeleteInfo();
         renderDeleteCanvas();
-    }
+    });
 }
 
 /**

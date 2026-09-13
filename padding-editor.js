@@ -636,7 +636,7 @@ function updateQRFromPaddingEdits() {
 
     // Check for required global variables
     if (typeof currentVersion === 'undefined' || typeof currentEccLevel === 'undefined' || typeof blockSizeTable === 'undefined') {
-        alert('Error: Missing required global variables. Make sure all scripts are loaded.');
+        showMessage('Error: Missing required global variables. Make sure all scripts are loaded.', 'error');
         return;
     }
 
@@ -680,7 +680,7 @@ function updateQRFromPaddingEdits() {
         }
 
     } catch (error) {
-        alert('Error updating QR code: ' + error.message);
+        showMessage('Error updating QR code: ' + error.message, 'error');
     }
 }
 
@@ -929,11 +929,11 @@ function setBrushMode(mode) {
 
 function resetPaddingEdits() {
     if (paddingEdits.size === 0) {
-        alert('No edits to reset.');
+        showMessage('No edits to reset.', 'error');
         return;
     }
 
-    if (confirm('Clear all padding edits and restore original values?')) {
+    showConfirm('Clear all padding edits and restore original values?', () => {
         paddingEdits.clear();
         if (originalPaddingBytes) {
             updatePaddingBytes([...originalPaddingBytes]);
@@ -953,12 +953,12 @@ function resetPaddingEdits() {
             }
         }
         renderPaddingGrid();
-    }
+    });
 }
 
 function randomizePadding() {
     if (editableCells.size === 0) {
-        alert('No padding modules available.');
+        showMessage('No padding modules available.', 'error');
         return;
     }
 
@@ -971,7 +971,7 @@ function randomizePadding() {
 
 function exportPaddingHex() {
     if (!encodedBitstream || !encodedBitstream.padBytes) {
-        alert('No padding bytes available.');
+        showMessage('No padding bytes available.', 'error');
         return;
     }
 
@@ -1000,7 +1000,7 @@ function updateModuleScaleDisplay() {
 // Initialize padding editor when tab is opened
 function initializePaddingEditor() {
     if (!originalMatrix || !encodedBitstream) {
-        alert('Please generate a QR code first.');
+        showMessage('Please generate a QR code first.', 'error');
         return;
     }
 

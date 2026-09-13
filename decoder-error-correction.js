@@ -113,7 +113,7 @@ function rsEncode(dataBytes, eccLen) {
 // Calculate Reed-Solomon syndromes
 function calculateSyndromes() {
     if (!qrBlocks.length) {
-        alert('De-interleave data first to prepare blocks for error correction.');
+        showMessage('De-interleave data first to prepare blocks for error correction.', 'error');
         return;
     }
 
@@ -170,7 +170,7 @@ function calculateSyndromes() {
 // Find error locations using Berlekamp-Massey and Chien search
 function findErrorLocations() {
     if (!syndromeCalculated || currentEcStep < 1) {
-        alert('Calculate syndromes first.');
+        showMessage('Calculate syndromes first.', 'error');
         return;
     }
 
@@ -276,7 +276,7 @@ function findErrorLocations() {
 // Calculate error values using Forney algorithm
 function calculateErrorValues() {
     if (currentEcStep < 2) {
-        alert('Find error locations first.');
+        showMessage('Find error locations first.', 'error');
         return;
     }
 
@@ -361,7 +361,7 @@ function calculateErrorValues() {
 // Apply corrections to fix errors
 function applyCorrections() {
     if (currentEcStep < 3) {
-        alert('Calculate error values first.');
+        showMessage('Calculate error values first.', 'error');
         return;
     }
 
@@ -530,23 +530,23 @@ function decodeAlphanumericMessage(dataBits, charCount) {
 // Decode the final message from corrected data
 function decodeMessage() {
     if (!qrBlocks.length) {
-        alert('No data blocks available.');
+        showMessage('No data blocks available.', 'error');
         return;
     }
 
     // Check if we have mode and size decoded
     if (!currentDataMode || currentDataMode === '-') {
-        alert('Please decode the data mode first.');
+        showMessage('Please decode the data mode first.', 'error');
         return;
     }
 
     if (!decodedMessageSize) {
-        alert('Please decode the message size first.');
+        showMessage('Please decode the message size first.', 'error');
         return;
     }
 
     if (!['Numeric', 'Alphanumeric', 'Byte'].includes(currentDataMode)) {
-        alert(`Message decoding is not yet supported for ${currentDataMode} mode.`);
+        showMessage(`Message decoding is not yet supported for ${currentDataMode} mode.`, 'error');
         return;
     }
 
