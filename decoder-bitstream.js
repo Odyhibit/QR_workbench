@@ -398,10 +398,7 @@ function deinterleaveData() {
         showMessage('Block information is missing or invalid for this version/ECC.', 'error');
         return;
     }
-    const blockCountSpan = document.getElementById('blockCount');
-    if (blockCountSpan) {
-        blockCountSpan.textContent = totalBlocks;
-    }
+    setBlockCountText(totalBlocks);
 
     const dataLens = [];
     for (let i = 0; i < (config.g1Blocks || 0); i++) dataLens.push(config.g1Data || 0);
@@ -497,8 +494,8 @@ function deinterleaveData() {
     decodedMessageSize = null;
     eciAssignment = null;
     eciEncoding = null;
-    document.getElementById('dataMode').textContent = '-';
-    document.getElementById('messageSize').textContent = '-';
+    resetDataModeSelect();
+    setMessageSizeText('-');
     const decodeSizeButton = document.getElementById('decodeSizeButton');
     if (decodeSizeButton) decodeSizeButton.disabled = true;
 
@@ -599,6 +596,9 @@ function decodeMode() {
     // Decode the mode
     let modeName = 'Unknown';
     let hasECI = false;
+    // Declared here (rather than inside the switch's ECI case) so it's still in scope
+    // when read after the switch, in the "mode not recognized" warning below.
+    let actualModeBitsString = '';
 
     switch (modeBits) {
         case 0b0001:
@@ -635,7 +635,7 @@ function decodeMode() {
                 return;
             }
 
-            const actualModeBitsString = deinterleavedDataBits.slice(bitOffset, bitOffset + 4);
+            actualModeBitsString = deinterleavedDataBits.slice(bitOffset, bitOffset + 4);
             const actualModeBits = parseInt(actualModeBitsString, 2);
             bitOffset += 4;
             totalBitsUsed += 4;
@@ -663,20 +663,46 @@ function decodeMode() {
             modeName = `Unknown (${modeBits.toString(2).padStart(4, '0')})`;
     }
 
-    // Display the mode (with ECI info if applicable)
-    currentDataMode = modeName;
-    if (hasECI) {
-        document.getElementById('dataMode').textContent = `${modeName} (ECI ${eciAssignment}: ${eciEncoding})`;
-    } else {
-        document.getElementById('dataMode').textContent = modeName;
+    // Populate the Data Mode dropdown with the auto-detected value (only when it's a
+    // recognized mode) and let the user override it below - handy for QR codes where
+    // the mode indicator itself was tampered with (e.g. CTF challenges) but the rest
+    // of the bitstream is intact. currentDataMode always reflects whatever ends up
+    // selected, whether auto-detected or overridden.
+    const recognizedModes = ['Numeric', 'Alphanumeric', 'Byte', 'Kanji'];
+    const isRecognizedMode = recognizedModes.includes(modeName);
+    currentDataMode = isRecognizedMode ? modeName : '';
+    updateDataModeDropdowns(currentDataMode, true);
+
+    if (!hasECI) {
         // Reset ECI state if no ECI
         eciAssignment = null;
         eciEncoding = null;
     }
 
+    if (!isRecognizedMode) {
+        const rawBitsLabel = hasECI ? actualModeBitsString : modeBitsString;
+        showMessage(
+            `Mode indicator read as ${rawBitsLabel}, which isn't a standard QR mode - the code may be damaged or intentionally modified (common in CTF challenges). Select the data mode manually below to continue.`,
+            'warning'
+        );
+        // Bring the Data Mode dropdown (Recover Data tab's copy - the one already in
+        // view, since this only runs from that tab's "Decode Mode" button) into view
+        // and focus it so the user can act on the message immediately.
+        const dataModeSelect3 = document.getElementById('dataModeSelect3');
+        if (dataModeSelect3) {
+            dataModeSelect3.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            dataModeSelect3.focus();
+        }
+    } else if (hasECI) {
+        showMessage(
+            `Data mode auto-detected as ${modeName} (via ECI ${eciAssignment}: ${eciEncoding}). Override below if this looks wrong.`,
+            'info'
+        );
+    }
+
     // Enable decode size button for supported modes
     const decodeSizeButton = document.getElementById('decodeSizeButton');
-    if (['Numeric', 'Alphanumeric', 'Byte'].includes(modeName)) {
+    if (['Numeric', 'Alphanumeric', 'Byte'].includes(currentDataMode)) {
         decodeSizeButton.disabled = false;
     } else {
         decodeSizeButton.disabled = true;
@@ -779,7 +805,7 @@ function decodeSize() {
 
     // Display the size with appropriate units
     const unit = currentDataMode === 'Byte' ? 'bytes' : 'characters';
-    document.getElementById('messageSize').textContent = `${sizeValue} ${unit}`;
+    setMessageSizeText(`${sizeValue} ${unit}`);
 
     // Update the bitstream display to replace size bits with size label
     const outputArea = document.getElementById('bitstreamOutput');

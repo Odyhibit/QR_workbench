@@ -1,32 +1,112 @@
 // decoder-ui.js
 // UI functions, event handlers, and display updates
 
-// Update ECC level dropdowns (syncs both Tab 1 and Tab 2)
+// Update ECC level dropdowns (syncs Tab 1, Tab 2, and Tab 3's copies)
 function updateEccDropdowns(eccLevel) {
-    const select1 = document.getElementById('eccLevelSelect');
-    const select2 = document.getElementById('eccLevelSelect2');
-    if (select1) select1.value = eccLevel || '';
-    if (select2) select2.value = eccLevel || '';
+    ['eccLevelSelect', 'eccLevelSelect2', 'eccLevelSelect3'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) select.value = eccLevel || '';
+    });
 }
 
-// Update mask pattern dropdowns (syncs both Tab 1 and Tab 2)
+// Update mask pattern dropdowns (syncs Tab 1, Tab 2, and Tab 3's copies)
 function updateMaskDropdowns(maskPattern) {
-    const select1 = document.getElementById('maskPatternSelect');
-    const select2 = document.getElementById('maskPatternSelect2');
     const value = maskPattern !== undefined && maskPattern !== null ? maskPattern.toString() : '-1';
-    if (select1) select1.value = value;
-    if (select2) select2.value = value;
+    ['maskPatternSelect', 'maskPatternSelect2', 'maskPatternSelect3'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) select.value = value;
+    });
+}
+
+// Update Data Mode dropdowns (syncs Tab 2's and Tab 3's copies). `enabled` is
+// optional - pass it to also set the disabled state; omit to leave that alone.
+function updateDataModeDropdowns(value, enabled) {
+    ['dataModeSelect', 'dataModeSelect3'].forEach(id => {
+        const select = document.getElementById(id);
+        if (!select) return;
+        select.value = value || '';
+        if (enabled !== undefined) select.disabled = !enabled;
+    });
+}
+
+// Reset the Data Mode dropdowns to their default (unset, disabled-until-decoded) state.
+function resetDataModeSelect() {
+    updateDataModeDropdowns('', false);
+}
+
+// Handle Data Mode dropdown change - lets the user override an auto-detected (or
+// unrecognized) mode indicator, e.g. a QR code edited for a CTF where the mode bits
+// were tampered with but the rest of the bitstream is intact. Overriding only changes
+// how the already-read header bits are interpreted, not their position in the
+// bitstream, so no matrix/bitstream reset is needed - just redo size and message
+// decoding against the (possibly overridden) mode.
+function onDataModeChange(newValue) {
+    if (newValue === currentDataMode) return;
+
+    currentDataMode = newValue;
+    updateDataModeDropdowns(newValue, true);
+
+    isSizeDecoded = false;
+    decodedMessageSize = null;
+    setMessageSizeText('-');
+
+    const decodeSizeButton = document.getElementById('decodeSizeButton');
+    if (decodeSizeButton) {
+        decodeSizeButton.disabled = !['Numeric', 'Alphanumeric', 'Byte'].includes(newValue);
+    }
+
+    // Keep this available rather than disabling it - overriding the mode should let
+    // the user immediately try "Decode Message" again (e.g. to compare the raw
+    // message before error correction against the corrected one after), the same
+    // way it's available right after de-interleaving.
+    const decodeMessageButton = document.getElementById('decodeMessageButton');
+    if (decodeMessageButton) {
+        decodeMessageButton.disabled = !['Numeric', 'Alphanumeric', 'Byte'].includes(newValue);
+    }
+
+    const messageBox = document.getElementById('decodedMessageBox');
+    if (messageBox) messageBox.style.display = 'none';
+
+    if (newValue) {
+        showMessage(`Data mode overridden to ${newValue}. Decode size (and the message) again to apply it.`, 'info');
+    }
+}
+
+// Update the "Blocks" count display (kept in sync across tabs).
+function setBlockCountText(text) {
+    ['blockCount', 'blockCount3'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    });
+}
+
+// Update the "Message Size" display (kept in sync across tabs).
+function setMessageSizeText(text) {
+    ['messageSize', 'messageSize3'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    });
+}
+
+// Update the "Version" display (kept in sync across Tab 1, Tab 2, and Tab 3).
+function setVersionInfoText(moduleCount, version) {
+    const sizeText = `${moduleCount}x${moduleCount}`;
+    const labelText = `Version ${version}:`;
+    [['versionInfo', 'versionLabel'], ['versionInfo2', 'versionLabel2'], ['versionInfo3', 'versionLabel3']].forEach(([infoId, labelId]) => {
+        const infoEl = document.getElementById(infoId);
+        const labelEl = document.getElementById(labelId);
+        if (infoEl) infoEl.textContent = sizeText;
+        if (labelEl) labelEl.textContent = labelText;
+    });
 }
 
 // Handle ECC dropdown change
-function onEccLevelChange(newValue, sourceId) {
+function onEccLevelChange(newValue) {
     const oldValue = currentEccLevel;
     currentEccLevel = newValue;
 
-    // Sync the other dropdown
-    const otherId = sourceId === 'eccLevelSelect' ? 'eccLevelSelect2' : 'eccLevelSelect';
-    const otherSelect = document.getElementById(otherId);
-    if (otherSelect) otherSelect.value = newValue;
+    // Keep every copy of the dropdown in sync (Tab 1, Tab 2, Tab 3)
+    updateEccDropdowns(newValue);
 
     // Reset decoder state if value actually changed and we have a matrix
     if (oldValue !== newValue && originalMatrix) {
@@ -35,15 +115,13 @@ function onEccLevelChange(newValue, sourceId) {
 }
 
 // Handle mask pattern dropdown change
-function onMaskPatternChange(newValue, sourceId) {
+function onMaskPatternChange(newValue) {
     const maskValue = parseInt(newValue);
     const oldValue = currentMaskPattern;
     currentMaskPattern = maskValue;
 
-    // Sync the other dropdown
-    const otherId = sourceId === 'maskPatternSelect' ? 'maskPatternSelect2' : 'maskPatternSelect';
-    const otherSelect = document.getElementById(otherId);
-    if (otherSelect) otherSelect.value = newValue;
+    // Keep every copy of the dropdown in sync (Tab 1, Tab 2, Tab 3)
+    updateMaskDropdowns(maskValue);
 
     // Update unmask button text
     const unmaskButton = document.getElementById('unmaskButton');
@@ -124,9 +202,9 @@ function resetToOriginalMatrix() {
     if (legend) legend.style.display = 'none';
 
     // Reset info displays
-    document.getElementById('blockCount').textContent = '-';
-    document.getElementById('dataMode').textContent = '-';
-    document.getElementById('messageSize').textContent = '-';
+    setBlockCountText('-');
+    resetDataModeSelect();
+    setMessageSizeText('-');
 
     // Reset marked components visuals (keep the toggle state)
     // Redraw the cleaned QR
@@ -217,14 +295,17 @@ function calculateByteMaskHint() {
     return validMasks;
 }
 
-// Update the byte mask hint display
-function updateByteMaskHint() {
-    const hintSpan = document.getElementById('byteMaskHint');
-    const hintSpan2 = document.getElementById('byteMaskHint2');
+// Update the byte mask hint display (syncs Tab 1, Tab 2, and Tab 3's copies)
+function setByteMaskHintText(text) {
+    ['byteMaskHint', 'byteMaskHint2', 'byteMaskHint3'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = text;
+    });
+}
 
+function updateByteMaskHint() {
     if (!moduleMatrix) {
-        if (hintSpan) hintSpan.textContent = '-';
-        if (hintSpan2) hintSpan2.textContent = '-';
+        setByteMaskHintText('-');
         return;
     }
 
@@ -237,37 +318,37 @@ function updateByteMaskHint() {
         hintText = 'none';
     }
 
-    if (hintSpan) hintSpan.textContent = hintText;
-    if (hintSpan2) hintSpan2.textContent = hintText;
+    setByteMaskHintText(hintText);
 }
 
 // Initialize dropdown event listeners (called from decoder.js)
 function initFormatDropdowns() {
-    const eccSelect1 = document.getElementById('eccLevelSelect');
-    const eccSelect2 = document.getElementById('eccLevelSelect2');
-    const maskSelect1 = document.getElementById('maskPatternSelect');
-    const maskSelect2 = document.getElementById('maskPatternSelect2');
+    ['eccLevelSelect', 'eccLevelSelect2', 'eccLevelSelect3'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+            select.addEventListener('change', function() {
+                onEccLevelChange(this.value);
+            });
+        }
+    });
 
-    if (eccSelect1) {
-        eccSelect1.addEventListener('change', function() {
-            onEccLevelChange(this.value, 'eccLevelSelect');
-        });
-    }
-    if (eccSelect2) {
-        eccSelect2.addEventListener('change', function() {
-            onEccLevelChange(this.value, 'eccLevelSelect2');
-        });
-    }
-    if (maskSelect1) {
-        maskSelect1.addEventListener('change', function() {
-            onMaskPatternChange(this.value, 'maskPatternSelect');
-        });
-    }
-    if (maskSelect2) {
-        maskSelect2.addEventListener('change', function() {
-            onMaskPatternChange(this.value, 'maskPatternSelect2');
-        });
-    }
+    ['maskPatternSelect', 'maskPatternSelect2', 'maskPatternSelect3'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+            select.addEventListener('change', function() {
+                onMaskPatternChange(this.value);
+            });
+        }
+    });
+
+    ['dataModeSelect', 'dataModeSelect3'].forEach(id => {
+        const select = document.getElementById(id);
+        if (select) {
+            select.addEventListener('change', function() {
+                onDataModeChange(this.value);
+            });
+        }
+    });
 }
 
 // Tab switching
@@ -603,8 +684,7 @@ function drawImageWithGrid() {
 
     // Update info display
     document.getElementById('moduleSize').textContent = getApproxModuleSize(qrCorners, moduleCount);
-    document.getElementById('versionInfo').textContent = `${moduleCount}x${moduleCount}`;
-    document.getElementById('versionLabel').textContent = `Version ${version}:`;
+    setVersionInfoText(moduleCount, version);
 
     // Set canvas size to match image
     canvas.width = currentImage.width;
@@ -703,12 +783,12 @@ function drawImageWithGrid() {
         // Reset decode mode button
         const decodeModeButton = document.getElementById('decodeModeButton');
         decodeModeButton.disabled = true; // Disabled until unmask is clicked
-        document.getElementById('dataMode').textContent = '-';
+        resetDataModeSelect();
 
         // Reset decode size button
         const decodeSizeButton = document.getElementById('decodeSizeButton');
         decodeSizeButton.disabled = true;
-        document.getElementById('messageSize').textContent = '-';
+        setMessageSizeText('-');
 
         if (formatInfo.distance > 0) {
             showMessage(
@@ -745,12 +825,8 @@ function drawImageWithGrid() {
         );
     }
 
-    // Update tab 2 version info
-    document.getElementById('versionInfo2').textContent = `${moduleCount}x${moduleCount}`;
-    document.getElementById('versionLabel2').textContent = `Version ${version}:`;
     // Reset block count display until deinterleave sets it
-    const blockCountSpan = document.getElementById('blockCount');
-    if (blockCountSpan) blockCountSpan.textContent = '-';
+    setBlockCountText('-');
 
     // Enable/disable alignment button based on version (version 2+)
     const markAlignmentButton = document.getElementById('markAlignment');
@@ -1096,6 +1172,7 @@ function resetDecoderState() {
     // Clear format information
     document.getElementById('versionInfo').textContent = '-';
     document.getElementById('versionInfo2').textContent = '-';
+    document.getElementById('versionInfo3').textContent = '-';
     Object.values(cornerInputs).forEach(pair => {
         pair.x.value = 0;
         pair.y.value = 0;
@@ -1105,13 +1182,10 @@ function resetDecoderState() {
     updateEccDropdowns('');
     updateMaskDropdowns(-1);
     // Reset byte mask hint
-    const byteMaskHint = document.getElementById('byteMaskHint');
-    const byteMaskHint2 = document.getElementById('byteMaskHint2');
-    if (byteMaskHint) byteMaskHint.textContent = '-';
-    if (byteMaskHint2) byteMaskHint2.textContent = '-';
-    document.getElementById('blockCount').textContent = '-';
-    document.getElementById('dataMode').textContent = '-';
-    document.getElementById('messageSize').textContent = '-';
+    setByteMaskHintText('-');
+    setBlockCountText('-');
+    resetDataModeSelect();
+    setMessageSizeText('-');
 
     // Reset marked components
     markedComponents = {
